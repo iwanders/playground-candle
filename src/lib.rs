@@ -103,6 +103,16 @@ impl Ann{
 
         Ok(r)
     }
+
+    fn backward(&self, x: &Tensor, y: &Tensor, batch: usize) -> anyhow::Result<()> {
+        let mut a = x.t()?;
+        let dz  = (a - y.t()?)?;
+
+        // let t = 
+        // let dw = dz.matmul(self.
+
+        Ok(())
+    }
 }
 
 
