@@ -11,21 +11,30 @@ use candle_nn::ops::softmax;
 // https://machinelearningmastery.com/how-to-develop-a-convolutional-neural-network-from-scratch-for-mnist-handwritten-digit-classification/
 // Interesting; https://www.kaggle.com/code/prashant111/mnist-deep-neural-network-with-keras
 
-
-enum Layer {
-    Linear{
-        // Z = W.T  X + b
-        w: Tensor,
-        b: Tensor,
-    },
+#[derive(Clone, Debug)]
+struct LinearLayer {
+    // Z = W.T  X + b
+    w: Tensor,
+    b: Tensor,
 }
+
+
+#[derive(Clone, Debug)]
+struct TrainLinear {
+    layer: LinearLayer,
+
+    a: Tensor,
+    z: Tensor,
+
+    dw: Tensor,
+    db: Tensor,    
+}
+
 
 struct Ann {
     layers_sizes: Vec<usize>,
-    layers: Vec<Layer>
+    layers: Vec<LinearLayer>
 }
-
-
 
 
 fn sigmoid(z: &Tensor) -> anyhow::Result<Tensor> {
@@ -34,7 +43,7 @@ fn sigmoid(z: &Tensor) -> anyhow::Result<Tensor> {
 }
 
 impl Ann{
-    pub fn create_layers(sizes: &[usize]) -> anyhow::Result<Vec<Layer>> {
+    pub fn create_layers(sizes: &[usize]) -> anyhow::Result<Vec<LinearLayer>> {
         // use rand::distributions::{Distribution, Uniform};
         // use rand::{RngCore, SeedableRng, Rng};
         use rand_distr::{StandardNormal, Distribution};
@@ -62,7 +71,7 @@ impl Ann{
 
             let b = Tensor::full(0f32, (sizes[l], 1), &Device::Cpu)?;
 
-            res.push(Layer::Linear{w, b});
+            res.push(LinearLayer{w, b});
         }
 
         Ok(res)
@@ -83,18 +92,25 @@ impl Ann{
         })
     }
 
-    pub fn forward(&self, input: &Tensor) -> anyhow::Result<Tensor> {
+    pub fn forward(&self, input: &Tensor, train: Option<&mut Vec<TrainLinear>>) -> anyhow::Result<Tensor> {
+        let mut train = train;
         let input = input.unsqueeze(1)?;
         let mut a = input.t()?;
         let mut z = None;
-        for l in self.layers.iter() {
-            match l {
-                Layer::Linear{ref w, ref b} => {
-                    // This mess of transposes can probably be cleaned up a bit.
-                    let zl = (a.matmul(&w.t()?)? + b.t()?)?;
-                    a = sigmoid(&zl)?;
-                    z = Some(zl);
-                },
+        for (i, l) in self.layers.iter().enumerate() {
+            let LinearLayer{ref w, ref b} = *l;
+            // This mess of transposes can probably be cleaned up a bit.
+            let zl = (a.matmul(&w.t()?)? + b.t()?)?;
+            a = sigmoid(&zl)?;
+            z = Some(zl.clone());
+            if let Some(ref mut tl) =  train.as_mut() {
+                tl.push(TrainLinear{
+                    layer: l.clone(),
+                    a: a.clone(),
+                    z: zl.clone(),
+                    dw: Tensor::full(1.0f32, l.w.shape(), &Device::Cpu)?,
+                    db: Tensor::full(1.0f32, b.shape(), &Device::Cpu)?,
+                });
             }
         }
 
@@ -104,14 +120,14 @@ impl Ann{
         Ok(r)
     }
 
-    fn backward(&self, x: &Tensor, y: &Tensor, batch: usize) -> anyhow::Result<()> {
-        let mut a = x.t()?;
-        let dz  = (a - y.t()?)?;
+    fn backward(&self, x: &Tensor, y: &Tensor, batch: usize, current: &[TrainLinear]) -> anyhow::Result<Vec<TrainLinear>> {
+        let mut a0 = x.t()?;
+        let dz  = (a0 - y.t()?)?;
 
         // let t = 
         // let dw = dz.matmul(self.
 
-        Ok(())
+        Ok(vec![])
     }
 }
 
@@ -152,8 +168,10 @@ pub fn main() -> MainResult {
 
     let ann = Ann::new(&[10, 10], 28 * 28)?;
 
-    let r = ann.forward(&train_0)?;
+    let mut t = vec![];
+    let r = ann.forward(&train_0, Some(&mut t))?;
     println!("r: {:?}", r.get(0)?.to_vec1::<f32>()?);
+    println!("t: {:?}", t);
         
 
     Ok(())
