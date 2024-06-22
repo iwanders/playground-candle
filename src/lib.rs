@@ -6,6 +6,12 @@ use candle_core::{Tensor, Device};
 
 // Pretty much a fully connected perceptron network?
 
+
+// Others;
+// https://machinelearningmastery.com/how-to-develop-a-convolutional-neural-network-from-scratch-for-mnist-handwritten-digit-classification/
+// Interesting; https://www.kaggle.com/code/prashant111/mnist-deep-neural-network-with-keras
+
+
 enum Layer {
     Linear{
         // Z = W.T  X + b
@@ -19,6 +25,14 @@ struct Ann {
     layers: Vec<Layer>
 }
 
+
+
+
+fn sigmoid(z: &Tensor) -> anyhow::Result<Tensor> {
+    let one = Tensor::full(1.0f32, z.shape(), &Device::Cpu)?;
+    Ok((&one / (&one + z.neg()?.exp()?)?)?)
+}
+
 impl Ann{
     pub fn create_layers(sizes: &[usize]) -> anyhow::Result<Vec<Layer>> {
         // use rand::distributions::{Distribution, Uniform};
@@ -30,16 +44,12 @@ impl Ann{
         let mut rng = XorShiftRng::seed_from_u64(1);
 
 
-        let v : f64 = rng.sample(rand_distr::StandardNormal);
+
+
+        // let v : f64 = rng.sample(rand_distr::StandardNormal);
         
         let mut res = vec![];
 
-        /*
-        for l in range(1, len(self.layers_size)):
-            self.parameters["W" + str(l)] = np.random.randn(self.layers_size[l], self.layers_size[l - 1]) / np.sqrt(
-                self.layers_size[l - 1])
-            self.parameters["b" + str(l)] = np.zeros((self.layers_size[l], 1))
-        */
         for l in 1..sizes.len() {
             let w_size = sizes[l] * sizes[l-1];
             let mut v : Vec<f32> = Vec::with_capacity(w_size);
@@ -57,6 +67,7 @@ impl Ann{
 
         Ok(res)
     }
+
     pub fn new(layers_size: &[usize], input_size: usize) -> anyhow::Result<Self> {
         let mut layers_sizes = layers_size.to_vec();
 
@@ -71,12 +82,23 @@ impl Ann{
             layers,
         })
     }
+
+    pub fn forward(&self, input: &Tensor) -> anyhow::Result<Tensor> {
+        let input = input.unsqueeze(1)?;
+        let mut a = input.t()?;
+        for l in self.layers.iter() {
+            match l {
+                Layer::Linear{ref w, ref b} => {
+                    // This mess of transposes can probably be cleaned up a bit.
+                    let z = (a.matmul(&w.t()?)? + b.t()?)?;
+                    a = sigmoid(&z)?;
+                },
+            }
+        }
+
+        Ok(a)
+    }
 }
-
-
-// Others;
-// https://machinelearningmastery.com/how-to-develop-a-convolutional-neural-network-from-scratch-for-mnist-handwritten-digit-classification/
-// Interesting; https://www.kaggle.com/code/prashant111/mnist-deep-neural-network-with-keras
 
 
 
@@ -109,10 +131,38 @@ pub fn main() -> MainResult {
 
     println!("m.train_labels[0]: {:?}", m.train_labels.get(0));
     let train_0 = m.train_images.get(0)?;
+    println!("train_0: {:?}", train_0);
     let img_0 = mnist_image(&train_0)?;
     img_0.save("/tmp/image_0.png")?;
 
     let ann = Ann::new(&[10, 10], 28 * 28)?;
 
+    ann.forward(&train_0)?;
+
     Ok(())
+}
+
+
+#[cfg(test)]
+mod test{
+    use super::*;
+    #[test]
+    fn matrix_mult() -> anyhow::Result<()> {
+                
+        let data: [f32; 6] = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t = Tensor::new(&data, &Device::Cpu)?;
+        println!("tensor: {:?}", t.to_vec1::<f32>()?);
+        println!("t: {t:#?}");
+        let t = t.reshape((2,3))?;
+        println!("t: {t:#?}");
+
+        let tt = t.t()?;
+
+        let tsq = (tt.matmul(&t))?;
+        println!("t: {:#?}, {:#?}", tsq.get(0)?, tsq.get(1)?);
+        // let t2 = t.t()?;
+        // let t3 = (t * t2)?;
+        
+        Ok(())
+    }
 }

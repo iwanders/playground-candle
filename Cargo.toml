@@ -26,3 +26,14 @@ rand_distr = "0.4.3"
 anyhow = "1.0.86"
 image = { version = "0.25.0", default-features = false, features = ["jpeg", "png"] }
 imageproc = { version = "0.24.0", default-features = false }
+
+
+
+# https://doc.rust-lang.org/cargo/reference/profiles.html
+[profile.release]
+# Enable some optimisations, but not all of it.
+#opt-level = 2
+# Only using line numbers as debug information shaves off 10 seconds on linking the viewer.
+debug = 1
+# Disable lto, it's slow for development
+#lto = false
