@@ -1,5 +1,5 @@
 use candle_core::{Tensor, Device};
-
+use candle_nn::ops::softmax;
 // Based on
 // https://medium.com/@koushikkushal95/mnist-hand-written-digit-classification-using-neural-network-from-scratch-54da85712a06
 // https://github.com/Koushikl0l/Machine_learning_from_scratch/blob/main/_nn_from_scratch__mini_batch_mnist.ipynb
@@ -86,17 +86,22 @@ impl Ann{
     pub fn forward(&self, input: &Tensor) -> anyhow::Result<Tensor> {
         let input = input.unsqueeze(1)?;
         let mut a = input.t()?;
+        let mut z = None;
         for l in self.layers.iter() {
             match l {
                 Layer::Linear{ref w, ref b} => {
                     // This mess of transposes can probably be cleaned up a bit.
-                    let z = (a.matmul(&w.t()?)? + b.t()?)?;
-                    a = sigmoid(&z)?;
+                    let zl = (a.matmul(&w.t()?)? + b.t()?)?;
+                    a = sigmoid(&zl)?;
+                    z = Some(zl);
                 },
             }
         }
 
-        Ok(a)
+        let z = z.unwrap();
+        let r = softmax(&z, 0)?;
+
+        Ok(r)
     }
 }
 
@@ -137,7 +142,9 @@ pub fn main() -> MainResult {
 
     let ann = Ann::new(&[10, 10], 28 * 28)?;
 
-    ann.forward(&train_0)?;
+    let r = ann.forward(&train_0)?;
+    println!("r: {:?}", r.get(0)?.to_vec1::<f32>()?);
+        
 
     Ok(())
 }
