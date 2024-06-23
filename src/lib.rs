@@ -41,6 +41,11 @@ fn sigmoid(z: &Tensor) -> anyhow::Result<Tensor> {
     let one = Tensor::full(1.0f32, z.shape(), &Device::Cpu)?;
     Ok((&one / (&one + z.neg()?.exp()?)?)?)
 }
+fn sigmoid_derivative(z: &Tensor) -> anyhow::Result<Tensor> {
+    let s = sigmoid(z)?;
+    let one = Tensor::full(1.0f32, z.shape(), &Device::Cpu)?;
+    Ok((&s * (one - &s)?)?)
+}
 
 impl Ann{
     pub fn create_layers(sizes: &[usize]) -> anyhow::Result<Vec<LinearLayer>> {
@@ -116,18 +121,51 @@ impl Ann{
 
         let z = z.unwrap();
         let r = softmax(&z, 0)?;
+        if let Some(ref mut tl) =  train.as_mut() {
+            tl.push(TrainLinear{
+                layer: LinearLayer{w: Tensor::full(1.0f32, (1,1), &Device::Cpu)?, b: Tensor::full(1.0f32, (1,1), &Device::Cpu)?},
+                a: a.clone(),
+                z: z.clone(),
+                dw: Tensor::full(1.0f32, (1,1), &Device::Cpu)?,
+                db: Tensor::full(1.0f32, (1,1), &Device::Cpu)?,
+            });
+        }
 
         Ok(r)
     }
 
-    fn backward(&self, x: &Tensor, y: &Tensor, batch: usize, current: &[TrainLinear]) -> anyhow::Result<Vec<TrainLinear>> {
+    fn backward(&self, x: &Tensor, y: &Tensor, batch: usize, current: &mut Vec<TrainLinear>) -> anyhow::Result<()> {
         let mut a0 = x.t()?;
+        current[0].a = a0.clone();
+
+        let l = self.layers_sizes.len();
+
+        let a = &current[l];
         let dz  = (a0 - y.t()?)?;
 
-        // let t = 
-        // let dw = dz.matmul(self.
+        let dza = dz.matmul(&current[l - 1].a.t()?)?;
+        let batch_div = Tensor::full(batch as f32, dza.shape(), &Device::Cpu)?;
+        let dw = dza.div(&batch_div)?;
 
-        Ok(vec![])
+        let db = dz.sum_keepdim(1)?.div(&batch_div)?;
+
+        let mut daprev = current[l].layer.w.t()?.matmul(&dz)?;
+
+        current[l].dw = dw;
+        current[l].db = db;
+
+        for l in (1..=self.layers_sizes.len()).rev() {
+            let dz = daprev.matmul(&sigmoid_derivative(&current[l].z)?)?;
+            let dw = dz.matmul(&current[l - 1].a.t()?)?.div(&batch_div)?;
+            let db = dz.sum_keepdim(1)?.div(&batch_div)?;
+            if l > 1 {
+                daprev = current[l].layer.w.t()?.matmul(&dz)?;
+            }
+            current[l].dw = dw;
+            current[l].db = db;
+        }
+
+        Ok(())
     }
 }
 
