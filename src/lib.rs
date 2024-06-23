@@ -86,7 +86,9 @@ impl Ann{
                 
             }
             mini.push((input, output));
-            // break;
+            if i > 10 {
+                break
+            }
         }
 
         Ok(mini)
@@ -268,7 +270,7 @@ impl Ann{
             }
             acc = acc / batch_len as f32;
             loss = loss / batch_len as f32;
-            println!("Epoch: {l}, batches: {batch}, loss: {loss}, acc: {acc}");
+            println!("Epoch: {l}, batch size: {batch}, steps {batch_len}, loss: {loss}, acc: {acc}");
         }
         Ok(())
     }
@@ -364,14 +366,18 @@ mod test{
 
     #[test]
     fn test_create_mini_batches() -> anyhow::Result<()> {
-        let x: [[f32; 2]; 3] = [[1.0f32, 2.0], [3.0, 4.0], [5.0, 6.0]];
+        let x: [[f32; 2]; 5] = [[1.0f32, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0], [9.0, 10.0]];
         let x = Tensor::new(&x, &Device::Cpu)?;
-        let y: [[f32;1]; 3] = [[11.0f32], [21.0], [31.0]];
+        let y: [u8; 5] = [1, 8, 7, 3, 1];
         let y = Tensor::new(&y, &Device::Cpu)?;
-        let d = Ann::create_mini_batches(&x, &y, 2)?;
-        println!("d: {:#?} ", d);
+        let mini_batches = Ann::create_mini_batches(&x, &y, 2)?;
+        println!("mini_batches: {:#?} ", mini_batches);
 
         
+        for (x_part, y_part) in mini_batches {
+            println!("x: {:?}", x_part.to_vec2::<f32>()?);
+            println!("y: {:?}", y_part.to_vec2::<f32>()?);
+        }
 
         Ok(())
     }
