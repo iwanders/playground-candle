@@ -1,4 +1,4 @@
-use candle_core::{Tensor, Device};
+use candle_core::{Tensor, Device, DType};
 use candle_nn::ops::softmax;
 use candle_core::IndexOp;
 // Based on
@@ -49,6 +49,49 @@ fn sigmoid_derivative(z: &Tensor) -> anyhow::Result<Tensor> {
 }
 
 impl Ann{
+
+    // This collects groups of 'batch' size from inputs and outputs.
+    fn create_mini_batches(x: &Tensor, y: &Tensor, batch: usize) -> anyhow::Result<Vec<(Tensor, Tensor)>> {
+        let mut mini = vec![];
+        use rand_distr::{StandardNormal, Distribution};
+        use rand::prelude::*;
+        use rand_xorshift::XorShiftRng;
+        let mut rng = XorShiftRng::seed_from_u64(1);
+
+        let (input_count, input_width) = x.shape().dims2()?;
+        let output_width = y.shape().dims1()?;
+        // println!("input_count: {input_count:?}  input_width {input_width}     output_width {output_width}");
+        // crate some shuffled indices;
+        let mut shuffled_indices: Vec<usize> = (0..input_count).collect();
+        shuffled_indices.shuffle(&mut rng);
+        let one = Tensor::full(1.0 as f32, (1, 1), &Device::Cpu)?;
+
+        let batch_count = input_count / batch;
+
+        for i in 0..batch_count{
+            let mut input = Tensor::full(0.0 as f32, (batch, input_width), &Device::Cpu)?;
+            let mut output = Tensor::full(0.0 as f32, (batch, 10), &Device::Cpu)?;
+            for k in 0..batch {
+                let in_index = shuffled_indices[i * batch + k];
+                let input_data = x.i((in_index..=in_index, ..))?;
+                let input_data= input_data.to_dtype(DType::F32)?;
+                input = input.slice_assign(&[k..=k, 0..=input_width-1], &input_data)?;
+
+                let d = y.get(in_index)?.to_scalar::<u8>()? as usize;
+                output = output.slice_assign(&[k..=k, d..=d], &one)?;
+                // let output_data = y.i((in_index..=in_index))?;
+                // let output_data= output_data.unsqueeze(1)?;
+                // let output_data= output_data.to_dtype(DType::F32)?;
+                // output = output.slice_assign(&[0..=0, k..=k], &output_data)?;
+                
+            }
+            mini.push((input, output));
+            // break;
+        }
+
+        Ok(mini)
+    }
+
     pub fn create_layers(sizes: &[usize]) -> anyhow::Result<Vec<LinearLayer>> {
         // use rand::distributions::{Distribution, Uniform};
         // use rand::{RngCore, SeedableRng, Rng};
@@ -91,7 +134,9 @@ impl Ann{
 
         let layers = Self::create_layers(&layers_sizes)?;
         // let mut layers = vec![];
-        
+        // for l in layers.iter() {
+            // println!("layer shapes: {:?}, {:?}", l.w.shape(), l.b.shape());
+        // }
         Ok(Ann{
             layers_sizes,
             layers,
@@ -100,21 +145,28 @@ impl Ann{
 
     pub fn forward(&self, input: &Tensor, train: Option<&mut Vec<TrainLinear>>) -> anyhow::Result<Tensor> {
         let mut train = train;
-        let input = input.unsqueeze(1)?;
+        // let input = input.unsqueeze(1)?;
         let mut a = input.t()?;
+        // let mut a = input.clone();
         let mut z = None;
-        for (i, l) in self.layers.iter().enumerate() {
-            let LinearLayer{ref w, ref b} = *l;
+        for l in 0..self.layers.len() {
+            // println!("l{l} a shape: {:?}", a.shape());
+            // let LinearLayer{ref w, ref b} = *l;
             // This mess of transposes can probably be cleaned up a bit.
-            let zl = (a.matmul(&w.t()?)? + b.t()?)?;
+            // let zl = (a.matmul(&w.t()?)? + b.t()?)?;
+            let w = &self.layers[l].w;
+            let b = &self.layers[l].b;
+            // println!(" w shape: {:?}", w.shape());
+            // println!(" b shape: {:?}", b.shape());
+            let zl = (w.matmul(&a)?.broadcast_add(&b)?);
             a = sigmoid(&zl)?;
             z = Some(zl.clone());
             if let Some(ref mut tl) =  train.as_mut() {
                 tl.push(TrainLinear{
-                    layer: l.clone(),
+                    layer: self.layers[l].clone(),
                     a: a.clone(),
                     z: zl.clone(),
-                    dw: Tensor::full(1.0f32, l.w.shape(), &Device::Cpu)?,
+                    dw: Tensor::full(1.0f32, w.shape(), &Device::Cpu)?,
                     db: Tensor::full(1.0f32, b.shape(), &Device::Cpu)?,
                 });
             }
@@ -124,7 +176,8 @@ impl Ann{
         let r = softmax(&z, 0)?;
         if let Some(ref mut tl) =  train.as_mut() {
             tl.push(TrainLinear{
-                layer: LinearLayer{w: Tensor::full(1.0f32, (1,1), &Device::Cpu)?, b: Tensor::full(1.0f32, (1,1), &Device::Cpu)?},
+                // layer: LinearLayer{w: Tensor::full(1.0f32, (1,1), &Device::Cpu)?, b: Tensor::full(1.0f32, (1,1), &Device::Cpu)?},
+                layer: self.layers.last().unwrap().clone(),
                 a: a.clone(),
                 z: z.clone(),
                 dw: Tensor::full(1.0f32, (1,1), &Device::Cpu)?,
@@ -138,27 +191,45 @@ impl Ann{
     fn backward(&self, x: &Tensor, y: &Tensor, batch: usize, current: &mut Vec<TrainLinear>) -> anyhow::Result<()> {
         let mut a0 = x.t()?;
         current[0].a = a0.clone();
+        // println!("x shape: {:?}, y shape: {:?}", x.shape(), y.shape());
+        // println!("Current size: {}", current.len());
 
         let l = self.layers_sizes.len();
 
-        let a = &current[l];
-        let dz  = (a0 - y.t()?)?;
+        let a = &current[l - 1];
+        let dz  = (&a.a - y.t()?)?;
 
         let dza = dz.matmul(&current[l - 1].a.t()?)?;
         let batch_div = Tensor::full(batch as f32, dza.shape(), &Device::Cpu)?;
         let dw = dza.div(&batch_div)?;
+        // println!("dw size: {:?}", dw.shape());
+        // println!("dza size: {}", dza.shape());
 
-        let db = dz.sum_keepdim(1)?.div(&batch_div)?;
+        // println!("dz size: {:?}", dz.shape());
+        let dzsum = dz.sum_keepdim(1)?;
+        // println!("dzsum size: {:?}", dzsum.shape());
+        let batch_div = Tensor::full(batch as f32, dzsum.shape(), &Device::Cpu)?;
+        let db = dzsum.div(&batch_div)?;
+        // println!("db size: {:?}", db.shape());
 
-        let mut daprev = current[l].layer.w.t()?.matmul(&dz)?;
+        let mut daprev = current[l - 1].layer.w.t()?.matmul(&dz)?;
+        // println!("daprev size: {:?}", daprev.shape());
 
-        current[l].dw = dw;
-        current[l].db = db;
+        current[l - 1].dw = dw;
+        current[l - 1].db = db;
 
-        for l in (1..=self.layers_sizes.len()).rev() {
-            let dz = daprev.matmul(&sigmoid_derivative(&current[l].z)?)?;
-            let dw = dz.matmul(&current[l - 1].a.t()?)?.div(&batch_div)?;
-            let db = dz.sum_keepdim(1)?.div(&batch_div)?;
+        for l in (1..self.layers_sizes.len() - 1).rev() {
+            let sigm_deriv = sigmoid_derivative(&current[l].z)?;
+            // println!("l {l} sigm_deriv size: {:?}", sigm_deriv.shape());
+            let dz = (&daprev * &sigm_deriv)?;
+            // println!("l {l} dz size: {:?}", dz.shape());
+            let dz_at = dz.matmul(&current[l - 1].a.t()?)?;
+            let batch_div = Tensor::full(batch as f32, dz_at.shape(), &Device::Cpu)?;
+            let dw = dz_at.div(&batch_div)?;
+            // println!("l {l} dw size: {:?}", dw.shape());
+            let dz_sum = dz.sum_keepdim(1)?;
+            let batch_div = Tensor::full(batch as f32, dz_sum.shape(), &Device::Cpu)?;
+            let db = dz_sum.div(&batch_div)?;
             if l > 1 {
                 daprev = current[l].layer.w.t()?.matmul(&dz)?;
             }
@@ -169,45 +240,49 @@ impl Ann{
         Ok(())
     }
 
-    // This collects groups of 'batch' size from inputs and outputs.
-    fn create_mini_batches(x: &Tensor, y: &Tensor, batch: usize) -> anyhow::Result<Vec<(Tensor, Tensor)>> {
-        let mut mini = vec![];
-        use rand_distr::{StandardNormal, Distribution};
-        use rand::prelude::*;
-        use rand_xorshift::XorShiftRng;
-        let mut rng = XorShiftRng::seed_from_u64(1);
+    fn fit(&mut self, x: &Tensor, y: &Tensor, learning_rate: f32, iterations: usize, batch: usize) -> anyhow::Result<()>  {
+        for l in 0..iterations {
+            let mut loss = 0.0f32;
+            let mut acc = 0.0f32;
+            let mini_batches = Self::create_mini_batches(x, y, batch)?;
+            let batch_len = mini_batches.len();
+            for (x_part, y_part) in mini_batches {
+                let mut store = Vec::<TrainLinear>::new();
+                // println!("x part: {x_part:#?} y part: {y_part:#?}");
+                let a = self.forward(&x_part, Some(&mut store))?;
+                let small = Tensor::full(1e-8f32, a.shape(), &Device::Cpu)?.t()?;
+                let a_plus_eps_log = (&(a.t()? + small)?).log()?;
+                let change : f32 = (&y_part.mul(&a_plus_eps_log)?).mean_all()?.to_scalar::<f32>()?;
+                loss -= change;
 
-        let (input_count, input_width) = x.shape().dims2()?;
-        let (output_count, output_width) = y.shape().dims2()?;
-        // println!("input_count: {input_count:?}  input_width {input_width}   output_count {output_count} output_width {output_width}");
-        // crate some shuffled indices;
-        let mut shuffled_indices: Vec<usize> = (0..input_count).collect();
-        shuffled_indices.shuffle(&mut rng);
+                let d = self.backward(&x_part, &y_part, batch, &mut store)?;
 
-
-        let batch_count = input_count / batch;
-
-        for i in 0..batch_count{
-            let mut input = Tensor::full(0.0 as f32, (batch, input_width), &Device::Cpu)?;
-            let mut output = Tensor::full(0.0 as f32, (batch, output_width), &Device::Cpu)?;
-            for k in 0..batch {
-                let in_index = shuffled_indices[i * batch + k];
-                input = input.slice_assign(&[k..=k, 0..=input_width-1], &x.i((in_index..=in_index, ..))?)?;
-                output = output.slice_assign(&[k..=k, 0..=output_width-1], &y.i((in_index..=in_index, ..))?)?;
+                // And finally, apply the gradient descent to the current layers...
+                for l in 1..self.layers_sizes.len() {
+                    let w_change = Tensor::from_slice(&[learning_rate], (1,1), &Device::Cpu)?.broadcast_mul(&store[l].dw)?;
+                    // println!(" g{l} with w_change: {:?}", w_change.shape());
+                    self.layers[l - 1].w = (&self.layers[l - 1].w - w_change)?;
+                    self.layers[l - 1].b = (&self.layers[l - 1].b - Tensor::from_slice(&[learning_rate], (1,1), &Device::Cpu)?.broadcast_mul(&store[l].db)?)?;
+                }
+                acc += self.predict(&x_part, &y_part)?;
             }
-            mini.push((input, output))
+            acc = acc / batch_len as f32;
+            loss = loss / batch_len as f32;
+            println!("Epoch: {l}, batches: {batch}, loss: {loss}, acc: {acc}");
         }
-
-        Ok(mini)
+        Ok(())
     }
 
-    fn fit(&mut self, x: &Tensor, y: &Tensor, learning_rate: f32, iterations: usize, batch: usize) {
-        for _ in 0..iterations {
-            let mini_batches = Self::create_mini_batches(x, y, batch);
-            // for (x_part, y_part) in mini_batches {
-                
-            // }
-        }
+    // Determine the ratio of correct answers.
+    fn predict(&self, x: &Tensor, y: &Tensor) -> anyhow::Result<f32> {
+        let a = self.forward(&x, None)?;
+        // println!("x shape {:?} y shape: {:?}  a shape {:?}", x.shape(), y.shape(), a.shape());
+        let y_hat = a.argmax(0)?;
+        let y_real = y.argmax(1)?;
+        // println!("y_hat shape {:?} y_real shape: {:?}  ", y_hat.shape(), y_real.shape());
+        let same = y_hat.eq(&y_real)?.to_dtype(DType::F32)?;
+        let v = same.mean_all()?.to_scalar::<f32>()?;
+        Ok(v)
     }
 }
 
@@ -246,13 +321,19 @@ pub fn main() -> MainResult {
     let img_0 = mnist_image(&train_0)?;
     img_0.save("/tmp/image_0.png")?;
 
-    let ann = Ann::new(&[10, 10], 28 * 28)?;
+    let mut ann = Ann::new(&[10, 10], 28 * 28)?;
 
     let mut t = vec![];
-    let r = ann.forward(&train_0, Some(&mut t))?;
+    let r = ann.forward(&m.train_images.i((0..64,..))?, Some(&mut t))?;
     println!("r: {:?}", r.get(0)?.to_vec1::<f32>()?);
     println!("t: {:?}", t);
-        
+
+
+    let learning_rate = 0.1;
+    let iterations = 100;
+    let batch_size = 64;
+    ann.fit(&m.train_images, &m.train_labels, learning_rate, iterations, batch_size)?;
+
 
     Ok(())
 }
