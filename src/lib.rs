@@ -11,6 +11,7 @@ use candle_nn::ops::softmax;
 // https://machinelearningmastery.com/how-to-develop-a-convolutional-neural-network-from-scratch-for-mnist-handwritten-digit-classification/
 // Interesting; https://www.kaggle.com/code/prashant111/mnist-deep-neural-network-with-keras
 
+
 #[derive(Clone, Debug)]
 struct LinearLayer {
     // Z = W.T  X + b
@@ -32,16 +33,7 @@ struct TrainLinear {
 struct Ann {
     layers_sizes: Vec<usize>,
     layers: Vec<LinearLayer>,
-}
-
-fn sigmoid(z: &Tensor) -> anyhow::Result<Tensor> {
-    let one = Tensor::full(1.0f32, z.shape(), &Device::Cpu)?;
-    Ok((&one / (&one + z.neg()?.exp()?)?)?)
-}
-fn sigmoid_derivative(z: &Tensor) -> anyhow::Result<Tensor> {
-    let s = sigmoid(z)?;
-    let one = Tensor::full(1.0f32, z.shape(), &Device::Cpu)?;
-    Ok((&s * (one - &s)?)?)
+    device: Device,
 }
 
 impl Ann {
@@ -49,7 +41,7 @@ impl Ann {
     fn create_mini_batches(
         x: &Tensor,
         y: &Tensor,
-        batch: usize,
+        batch: usize, device: &Device
     ) -> anyhow::Result<Vec<(Tensor, Tensor)>> {
         let mut mini = vec![];
         use rand::prelude::*;
@@ -62,13 +54,13 @@ impl Ann {
         // crate some shuffled indices;
         let mut shuffled_indices: Vec<usize> = (0..input_count).collect();
         shuffled_indices.shuffle(&mut rng);
-        let one = Tensor::full(1.0 as f32, (1, 1), &Device::Cpu)?;
+        let one = Tensor::full(1.0 as f32, (1, 1), device)?;
 
         let batch_count = input_count / batch;
 
         for i in 0..batch_count {
-            let mut input = Tensor::full(0.0 as f32, (batch, input_width), &Device::Cpu)?;
-            let mut output = Tensor::full(0.0 as f32, (batch, 10), &Device::Cpu)?;
+            let mut input = Tensor::full(0.0 as f32, (batch, input_width), device)?;
+            let mut output = Tensor::full(0.0 as f32, (batch, 10), device)?;
             for k in 0..batch {
                 let in_index = shuffled_indices[i * batch + k];
                 let input_data = x.i((in_index..=in_index, ..))?;
@@ -91,7 +83,19 @@ impl Ann {
         Ok(mini)
     }
 
-    pub fn create_layers(sizes: &[usize]) -> anyhow::Result<Vec<LinearLayer>> {
+
+    fn sigmoid(&self, z: &Tensor) -> anyhow::Result<Tensor> {
+        let one = Tensor::full(1.0f32, z.shape(), &self.device)?;
+        Ok((&one / (&one + z.neg()?.exp()?)?)?)
+    }
+    fn sigmoid_derivative(&self, z: &Tensor) -> anyhow::Result<Tensor> {
+        let s = self.sigmoid(z)?;
+        let one = Tensor::full(1.0f32, z.shape(), &self.device)?;
+        Ok((&s * (one - &s)?)?)
+    }
+
+
+    pub fn create_layers(sizes: &[usize], device: &Device) -> anyhow::Result<Vec<LinearLayer>> {
         use rand::prelude::*;
         use rand_xorshift::XorShiftRng;
         let mut rng = XorShiftRng::seed_from_u64(1);
@@ -104,11 +108,11 @@ impl Ann {
             for _ in 0..w_size {
                 v.push(rng.sample(rand_distr::StandardNormal));
             }
-            let w = Tensor::from_vec(v, (sizes[l], sizes[l - 1]), &Device::Cpu)?;
+            let w = Tensor::from_vec(v, (sizes[l], sizes[l - 1]), device)?;
             let d = (sizes[l - 1] as f32).sqrt();
-            let w = w.div(&Tensor::full(d, (sizes[l], sizes[l - 1]), &Device::Cpu)?)?;
+            let w = w.div(&Tensor::full(d, (sizes[l], sizes[l - 1]), device)?)?;
 
-            let b = Tensor::full(0f32, (sizes[l], 1), &Device::Cpu)?;
+            let b = Tensor::full(0f32, (sizes[l], 1), device)?;
 
             res.push(LinearLayer { w, b });
         }
@@ -116,13 +120,14 @@ impl Ann {
         Ok(res)
     }
 
-    pub fn new(layers_size: &[usize], input_size: usize) -> anyhow::Result<Self> {
+    pub fn new(layers_size: &[usize], input_size: usize, device: Device) -> anyhow::Result<Self> {
         let mut layers_sizes = layers_size.to_vec();
 
         // First layer is input_size long.
         layers_sizes.insert(0, input_size);
 
-        let layers = Self::create_layers(&layers_sizes)?;
+
+        let layers = Self::create_layers(&layers_sizes, &device)?;
         // let mut layers = vec![];
         // for l in layers.iter() {
         // println!("layer shapes: {:?}, {:?}", l.w.shape(), l.b.shape());
@@ -130,6 +135,7 @@ impl Ann {
         Ok(Ann {
             layers_sizes,
             layers,
+            device,
         })
     }
 
@@ -138,6 +144,7 @@ impl Ann {
         input: &Tensor,
         train: Option<&mut Vec<TrainLinear>>,
     ) -> anyhow::Result<Tensor> {
+        let input = input.to_device(&self.device)?;
         let mut train = train;
         // let input = input.unsqueeze(1)?;
         let mut a = input.t()?;
@@ -145,7 +152,7 @@ impl Ann {
         let mut z = None;
 
         if let Some(ref mut tl) = train.as_mut() {
-            let dummy = Tensor::full(0.0, (1, 1), &Device::Cpu)?;
+            let dummy = Tensor::full(0.0, (1, 1), &self.device)?;
             tl.push(TrainLinear {
                 layer: LinearLayer {
                     w: dummy.clone(),
@@ -169,15 +176,15 @@ impl Ann {
             // println!(" w shape: {:?}", w.shape());
             // println!(" b shape: {:?}", b.shape());
             let zl = w.matmul(&a)?.broadcast_add(&b)?;
-            a = sigmoid(&zl)?;
+            a = self.sigmoid(&zl)?;
             z = Some(zl.clone());
             if let Some(ref mut tl) = train.as_mut() {
                 tl.push(TrainLinear {
                     layer: self.layers[l].clone(),
                     a: a.clone(),
                     z: zl.clone(),
-                    dw: Tensor::full(1.0f32, w.shape(), &Device::Cpu)?,
-                    db: Tensor::full(1.0f32, b.shape(), &Device::Cpu)?,
+                    dw: Tensor::full(1.0f32, w.shape(), &self.device)?,
+                    db: Tensor::full(1.0f32, b.shape(), &self.device)?,
                 });
             }
         }
@@ -186,12 +193,12 @@ impl Ann {
         let r = softmax(&z, 0)?;
         if let Some(ref mut tl) = train.as_mut() {
             tl.push(TrainLinear {
-                // layer: LinearLayer{w: Tensor::full(1.0f32, (1,1), &Device::Cpu)?, b: Tensor::full(1.0f32, (1,1), &Device::Cpu)?},
+                // layer: LinearLayer{w: Tensor::full(1.0f32, (1,1), &self.device)?, b: Tensor::full(1.0f32, (1,1), &self.device)?},
                 layer: self.layers.last().unwrap().clone(),
                 a: a.clone(),
                 z: z.clone(),
-                dw: Tensor::full(1.0f32, (1, 1), &Device::Cpu)?,
-                db: Tensor::full(1.0f32, (1, 1), &Device::Cpu)?,
+                dw: Tensor::full(1.0f32, (1, 1), &self.device)?,
+                db: Tensor::full(1.0f32, (1, 1), &self.device)?,
             });
         }
 
@@ -217,7 +224,7 @@ impl Ann {
         let dz = (&a.a - y.t()?)?;
 
         let dza = dz.matmul(&current[l - 1].a.t()?)?;
-        let batch_div = Tensor::full(batch as f32, dza.shape(), &Device::Cpu)?;
+        let batch_div = Tensor::full(batch as f32, dza.shape(), &self.device)?;
         let dw = dza.div(&batch_div)?;
         // println!("dw size: {:?}", dw.shape());
         // println!("dza size: {}", dza.shape());
@@ -225,7 +232,7 @@ impl Ann {
         // println!("dz size: {:?}", dz.shape());
         let dzsum = dz.sum_keepdim(1)?;
         // println!("dzsum size: {:?}", dzsum.shape());
-        let batch_div = Tensor::full(batch as f32, dzsum.shape(), &Device::Cpu)?;
+        let batch_div = Tensor::full(batch as f32, dzsum.shape(), &self.device)?;
         let db = dzsum.div(&batch_div)?;
         // println!("db size: {:?}", db.shape());
 
@@ -237,16 +244,16 @@ impl Ann {
         current[l].db = db;
 
         for l in (1..self.layers_sizes.len() - 1).rev() {
-            let sigm_deriv = sigmoid_derivative(&current[l].z)?;
+            let sigm_deriv = self.sigmoid_derivative(&current[l].z)?;
             // println!("l {l} sigm_deriv size: {:?}", sigm_deriv.shape());
             let dz = (&daprev * &sigm_deriv)?;
             // println!("l {l} dz size: {:?}", dz.shape());
             let dz_at = dz.matmul(&current[l - 1].a.t()?)?;
-            let batch_div = Tensor::full(batch as f32, dz_at.shape(), &Device::Cpu)?;
+            let batch_div = Tensor::full(batch as f32, dz_at.shape(), &self.device)?;
             let dw = dz_at.div(&batch_div)?;
             // println!("l {l} dw size: {:?}", dw.shape());
             let dz_sum = dz.sum_keepdim(1)?;
-            let batch_div = Tensor::full(batch as f32, dz_sum.shape(), &Device::Cpu)?;
+            let batch_div = Tensor::full(batch as f32, dz_sum.shape(), &self.device)?;
             let db = dz_sum.div(&batch_div)?;
             if l > 1 {
                 daprev = current[l].layer.w.t()?.matmul(&dz)?;
@@ -266,16 +273,18 @@ impl Ann {
         iterations: usize,
         batch: usize,
     ) -> anyhow::Result<()> {
+        let x = x.to_device(&self.device)?;
+        let y = y.to_device(&self.device)?;
         for l in 0..iterations {
             let mut loss = 0.0f32;
             let mut acc = 0.0f32;
-            let mini_batches = Self::create_mini_batches(x, y, batch)?;
+            let mini_batches = Self::create_mini_batches(&x, &y, batch, &self.device)?;
             let batch_len = mini_batches.len();
             for (x_part, y_part) in mini_batches {
                 let mut store = Vec::<TrainLinear>::new();
                 // println!("x part: {x_part:#?} y part: {y_part:#?}");
                 let a = self.forward(&x_part, Some(&mut store))?;
-                let small = Tensor::full(1e-8f32, a.shape(), &Device::Cpu)?.t()?;
+                let small = Tensor::full(1e-8f32, a.shape(), &self.device)?.t()?;
                 let a_plus_eps_log = (&(a.t()? + small)?).log()?;
                 let change: f32 = (&y_part.mul(&a_plus_eps_log)?)
                     .mean_all()?
@@ -286,12 +295,12 @@ impl Ann {
 
                 // And finally, apply the gradient descent to the current layers...
                 for l in 1..self.layers_sizes.len() {
-                    let w_change = Tensor::from_slice(&[learning_rate], (1, 1), &Device::Cpu)?
+                    let w_change = Tensor::from_slice(&[learning_rate], (1, 1), &self.device)?
                         .broadcast_mul(&store[l].dw)?;
                     // println!(" g{l} with w_change: {:?}", w_change.shape());
                     self.layers[l - 1].w = (&self.layers[l - 1].w - w_change)?;
                     self.layers[l - 1].b = (&self.layers[l - 1].b
-                        - Tensor::from_slice(&[learning_rate], (1, 1), &Device::Cpu)?
+                        - Tensor::from_slice(&[learning_rate], (1, 1), &self.device)?
                             .broadcast_mul(&store[l].db)?)?;
                 }
                 acc += self.predict(&x_part, &y_part)?;
@@ -318,6 +327,8 @@ impl Ann {
     }
 
     fn classify(&self, x: &Tensor) -> anyhow::Result<Vec<u8>> {
+        let x = x.to_device(&self.device)?;
+        // let y = y.to_device(&self.device)?;
         let a = self.forward(&x, None)?;
         let y_hat = a.argmax(0)?;
         let y_hat_vec = y_hat.to_vec1::<u32>()?;
@@ -354,7 +365,10 @@ pub fn main() -> MainResult {
     let img_0 = mnist_image(&train_0)?;
     img_0.save("/tmp/image_0.png")?;
 
-    let mut ann = Ann::new(&[10, 10], 28 * 28)?;
+    // let device = Device::Cpu;
+    let device = Device::new_cuda(0)?;
+
+    let mut ann = Ann::new(&[10, 10], 28 * 28, device)?;
 
     let mut t = vec![];
     let r = ann.forward(&m.train_images.i((0..64, ..))?, Some(&mut t))?;
@@ -362,9 +376,7 @@ pub fn main() -> MainResult {
     println!("t: {:?}", t);
 
     let learning_rate = 0.1;
-    // let iterations = 100;
-    let iterations = 10;
-    // let iterations = 3;
+    let iterations = 100;
     let batch_size = 64;
     ann.fit(
         &m.train_images,
@@ -391,7 +403,7 @@ mod test {
     #[test]
     fn matrix_mult() -> anyhow::Result<()> {
         let data: [f32; 6] = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t = Tensor::new(&data, &Device::Cpu)?;
+        let t = Tensor::new(&data, &self.device)?;
         println!("tensor: {:?}", t.to_vec1::<f32>()?);
         println!("t: {t:#?}");
         let t = t.reshape((2, 3))?;
@@ -416,9 +428,9 @@ mod test {
             [7.0, 8.0],
             [9.0, 10.0],
         ];
-        let x = Tensor::new(&x, &Device::Cpu)?;
+        let x = Tensor::new(&x, &self.device)?;
         let y: [u8; 5] = [1, 8, 7, 3, 1];
-        let y = Tensor::new(&y, &Device::Cpu)?;
+        let y = Tensor::new(&y, &self.device)?;
         let mini_batches = Ann::create_mini_batches(&x, &y, 2)?;
         println!("mini_batches: {:#?} ", mini_batches);
 
