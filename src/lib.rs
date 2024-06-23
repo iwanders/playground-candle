@@ -1,5 +1,6 @@
 use candle_core::{Tensor, Device};
 use candle_nn::ops::softmax;
+use candle_core::IndexOp;
 // Based on
 // https://medium.com/@koushikkushal95/mnist-hand-written-digit-classification-using-neural-network-from-scratch-54da85712a06
 // https://github.com/Koushikl0l/Machine_learning_from_scratch/blob/main/_nn_from_scratch__mini_batch_mnist.ipynb
@@ -167,6 +168,47 @@ impl Ann{
 
         Ok(())
     }
+
+    // This collects groups of 'batch' size from inputs and outputs.
+    fn create_mini_batches(x: &Tensor, y: &Tensor, batch: usize) -> anyhow::Result<Vec<(Tensor, Tensor)>> {
+        let mut mini = vec![];
+        use rand_distr::{StandardNormal, Distribution};
+        use rand::prelude::*;
+        use rand_xorshift::XorShiftRng;
+        let mut rng = XorShiftRng::seed_from_u64(1);
+
+        let (input_count, input_width) = x.shape().dims2()?;
+        let (output_count, output_width) = y.shape().dims2()?;
+        // println!("input_count: {input_count:?}  input_width {input_width}   output_count {output_count} output_width {output_width}");
+        // crate some shuffled indices;
+        let mut shuffled_indices: Vec<usize> = (0..input_count).collect();
+        shuffled_indices.shuffle(&mut rng);
+
+
+        let batch_count = input_count / batch;
+
+        for i in 0..batch_count{
+            let mut input = Tensor::full(0.0 as f32, (batch, input_width), &Device::Cpu)?;
+            let mut output = Tensor::full(0.0 as f32, (batch, output_width), &Device::Cpu)?;
+            for k in 0..batch {
+                let in_index = shuffled_indices[i * batch + k];
+                input = input.slice_assign(&[k..=k, 0..=input_width-1], &x.i((in_index..=in_index, ..))?)?;
+                output = output.slice_assign(&[k..=k, 0..=output_width-1], &y.i((in_index..=in_index, ..))?)?;
+            }
+            mini.push((input, output))
+        }
+
+        Ok(mini)
+    }
+
+    fn fit(&mut self, x: &Tensor, y: &Tensor, learning_rate: f32, iterations: usize, batch: usize) {
+        for _ in 0..iterations {
+            let mini_batches = Self::create_mini_batches(x, y, batch);
+            // for (x_part, y_part) in mini_batches {
+                
+            // }
+        }
+    }
 }
 
 
@@ -236,6 +278,20 @@ mod test{
         // let t2 = t.t()?;
         // let t3 = (t * t2)?;
         
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_mini_batches() -> anyhow::Result<()> {
+        let x: [[f32; 2]; 3] = [[1.0f32, 2.0], [3.0, 4.0], [5.0, 6.0]];
+        let x = Tensor::new(&x, &Device::Cpu)?;
+        let y: [[f32;1]; 3] = [[11.0f32], [21.0], [31.0]];
+        let y = Tensor::new(&y, &Device::Cpu)?;
+        let d = Ann::create_mini_batches(&x, &y, 2)?;
+        println!("d: {:#?} ", d);
+
+        
+
         Ok(())
     }
 }
