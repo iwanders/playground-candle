@@ -1,11 +1,14 @@
 use candle_core::IndexOp;
 use candle_core::{DType, Device, Tensor};
 use candle_nn::ops::softmax;
+
+// Solving mnist fully connected linear layers.
+
 // Based on
 // https://medium.com/@koushikkushal95/mnist-hand-written-digit-classification-using-neural-network-from-scratch-54da85712a06
 // https://github.com/Koushikl0l/Machine_learning_from_scratch/blob/main/_nn_from_scratch__mini_batch_mnist.ipynb
 
-// Pretty much a fully connected perceptron network?
+// Pretty much a fully connected linear network?
 
 // Others;
 // https://machinelearningmastery.com/how-to-develop-a-convolutional-neural-network-from-scratch-for-mnist-handwritten-digit-classification/
@@ -30,13 +33,13 @@ struct TrainLinear {
     db: Tensor,
 }
 
-struct Ann {
+struct LinearNetwork {
     layers_sizes: Vec<usize>,
     layers: Vec<LinearLayer>,
     device: Device,
 }
 
-impl Ann {
+impl LinearNetwork {
     // This collects groups of 'batch' size from inputs and outputs.
     fn create_mini_batches(
         x: &Tensor,
@@ -132,7 +135,7 @@ impl Ann {
         // for l in layers.iter() {
         // println!("layer shapes: {:?}, {:?}", l.w.shape(), l.b.shape());
         // }
-        Ok(Ann {
+        Ok(LinearNetwork {
             layers_sizes,
             layers,
             device,
@@ -365,10 +368,10 @@ pub fn main() -> MainResult {
     let img_0 = mnist_image(&train_0)?;
     img_0.save("/tmp/image_0.png")?;
 
-    // let device = Device::Cpu;
-    let device = Device::new_cuda(0)?;
+    let device = Device::Cpu;
+    // let device = Device::new_cuda(0)?;
 
-    let mut ann = Ann::new(&[10, 10], 28 * 28, device)?;
+    let mut ann = LinearNetwork::new(&[10, 10], 28 * 28, device)?;
 
     let mut t = vec![];
     let r = ann.forward(&m.train_images.i((0..64, ..))?, Some(&mut t))?;
@@ -376,7 +379,8 @@ pub fn main() -> MainResult {
     println!("t: {:?}", t);
 
     let learning_rate = 0.1;
-    let iterations = 100;
+    // let iterations = 100;
+    let iterations = 10;
     let batch_size = 64;
     ann.fit(
         &m.train_images,
@@ -431,7 +435,7 @@ mod test {
         let x = Tensor::new(&x, &self.device)?;
         let y: [u8; 5] = [1, 8, 7, 3, 1];
         let y = Tensor::new(&y, &self.device)?;
-        let mini_batches = Ann::create_mini_batches(&x, &y, 2)?;
+        let mini_batches = LinearNetwork::create_mini_batches(&x, &y, 2)?;
         println!("mini_batches: {:#?} ", mini_batches);
 
         for (x_part, y_part) in mini_batches {
