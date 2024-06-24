@@ -195,6 +195,7 @@ impl LinearNetwork {
         current: &mut Vec<TrainLinear>,
     ) -> anyhow::Result<()> {
         current[0].a = x.t()?;
+        let batch_div = Tensor::full(batch as f32, (1,), &self.device)?;
 
         let l = self.layers_sizes.len() - 1;
 
@@ -202,13 +203,11 @@ impl LinearNetwork {
         let dz = (&a.a - y.t()?)?;
 
         let dza = dz.matmul(&current[l - 1].a.t()?)?;
-        let batch_div = Tensor::full(batch as f32, dza.shape(), &self.device)?;
-        let dw = dza.div(&batch_div)?;
+        let dw = dza.broadcast_div(&batch_div)?;
 
 
         let dzsum = dz.sum_keepdim(1)?;
-        let batch_div = Tensor::full(batch as f32, dzsum.shape(), &self.device)?;
-        let db = dzsum.div(&batch_div)?;
+        let db = dzsum.broadcast_div(&batch_div)?;
 
         let mut daprev = current[l].layer.w.t()?.matmul(&dz)?;
 
@@ -221,12 +220,10 @@ impl LinearNetwork {
             let dz = (&daprev * &sigm_deriv)?;
 
             let dz_at = dz.matmul(&current[l - 1].a.t()?)?;
-            let batch_div = Tensor::full(batch as f32, dz_at.shape(), &self.device)?;
-            let dw = dz_at.div(&batch_div)?;
+            let dw = dz_at.broadcast_div(&batch_div)?;
 
             let dz_sum = dz.sum_keepdim(1)?;
-            let batch_div = Tensor::full(batch as f32, dz_sum.shape(), &self.device)?;
-            let db = dz_sum.div(&batch_div)?;
+            let db = dz_sum.broadcast_div(&batch_div)?;
             if l > 1 {
                 daprev = current[l].layer.w.t()?.matmul(&dz)?;
             }
