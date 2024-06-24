@@ -52,8 +52,7 @@ impl LinearNetwork {
         let mut rng = XorShiftRng::seed_from_u64(1);
 
         let (input_count, input_width) = x.shape().dims2()?;
-        // let output_width = y.shape().dims1()?;
-        // println!("input_count: {input_count:?}  input_width {input_width}     output_width {output_width}");
+
         // crate some shuffled indices;
         let mut shuffled_indices: Vec<usize> = (0..input_count).collect();
         shuffled_indices.shuffle(&mut rng);
@@ -72,15 +71,8 @@ impl LinearNetwork {
 
                 let d = y.get(in_index)?.to_scalar::<u8>()? as usize;
                 output = output.slice_assign(&[k..=k, d..=d], &one)?;
-                // let output_data = y.i((in_index..=in_index))?;
-                // let output_data= output_data.unsqueeze(1)?;
-                // let output_data= output_data.to_dtype(DType::F32)?;
-                // output = output.slice_assign(&[0..=0, k..=k], &output_data)?;
             }
             mini.push((input, output));
-            if i > 50 {
-                // break
-            }
         }
 
         Ok(mini)
@@ -129,12 +121,8 @@ impl LinearNetwork {
         // First layer is input_size long.
         layers_sizes.insert(0, input_size);
 
-
         let layers = Self::create_layers(&layers_sizes, &device)?;
-        // let mut layers = vec![];
-        // for l in layers.iter() {
-        // println!("layer shapes: {:?}, {:?}", l.w.shape(), l.b.shape());
-        // }
+
         Ok(LinearNetwork {
             layers_sizes,
             layers,
@@ -149,9 +137,8 @@ impl LinearNetwork {
     ) -> anyhow::Result<Tensor> {
         let input = input.to_device(&self.device)?;
         let mut train = train;
-        // let input = input.unsqueeze(1)?;
+
         let mut a = input.t()?;
-        // let mut a = input.clone();
         let mut z = None;
 
         if let Some(ref mut tl) = train.as_mut() {
@@ -161,7 +148,6 @@ impl LinearNetwork {
                     w: dummy.clone(),
                     b: dummy.clone(),
                 },
-                // layer: self.layers.last().unwrap().clone(),
                 a: dummy.clone(),
                 z: dummy.clone(),
                 dw: dummy.clone(),
@@ -170,14 +156,8 @@ impl LinearNetwork {
         }
 
         for l in 0..self.layers.len() {
-            // println!("l{l} a shape: {:?}", a.shape());
-            // let LinearLayer{ref w, ref b} = *l;
-            // This mess of transposes can probably be cleaned up a bit.
-            // let zl = (a.matmul(&w.t()?)? + b.t()?)?;
             let w = &self.layers[l].w;
             let b = &self.layers[l].b;
-            // println!(" w shape: {:?}", w.shape());
-            // println!(" b shape: {:?}", b.shape());
             let zl = w.matmul(&a)?.broadcast_add(&b)?;
             a = self.sigmoid(&zl)?;
             z = Some(zl.clone());
@@ -196,7 +176,6 @@ impl LinearNetwork {
         let r = softmax(&z, 0)?;
         if let Some(ref mut tl) = train.as_mut() {
             tl.push(TrainLinear {
-                // layer: LinearLayer{w: Tensor::full(1.0f32, (1,1), &self.device)?, b: Tensor::full(1.0f32, (1,1), &self.device)?},
                 layer: self.layers.last().unwrap().clone(),
                 a: a.clone(),
                 z: z.clone(),
@@ -216,12 +195,8 @@ impl LinearNetwork {
         current: &mut Vec<TrainLinear>,
     ) -> anyhow::Result<()> {
         current[0].a = x.t()?;
-        // current[0].a = a0.clone();
-        // println!("x shape: {:?}, y shape: {:?}", x.shape(), y.shape());
-        // println!("Current size: {}", current.len());
 
         let l = self.layers_sizes.len() - 1;
-        // println!("l : {l}");
 
         let a = &current[l];
         let dz = (&a.a - y.t()?)?;
@@ -229,32 +204,26 @@ impl LinearNetwork {
         let dza = dz.matmul(&current[l - 1].a.t()?)?;
         let batch_div = Tensor::full(batch as f32, dza.shape(), &self.device)?;
         let dw = dza.div(&batch_div)?;
-        // println!("dw size: {:?}", dw.shape());
-        // println!("dza size: {}", dza.shape());
 
-        // println!("dz size: {:?}", dz.shape());
+
         let dzsum = dz.sum_keepdim(1)?;
-        // println!("dzsum size: {:?}", dzsum.shape());
         let batch_div = Tensor::full(batch as f32, dzsum.shape(), &self.device)?;
         let db = dzsum.div(&batch_div)?;
-        // println!("db size: {:?}", db.shape());
 
         let mut daprev = current[l].layer.w.t()?.matmul(&dz)?;
-        // println!("daprev size: {:?}", daprev.shape());
 
-        // println!("Assigning dw for l {l}");
         current[l].dw = dw;
         current[l].db = db;
 
         for l in (1..self.layers_sizes.len() - 1).rev() {
             let sigm_deriv = self.sigmoid_derivative(&current[l].z)?;
-            // println!("l {l} sigm_deriv size: {:?}", sigm_deriv.shape());
+
             let dz = (&daprev * &sigm_deriv)?;
-            // println!("l {l} dz size: {:?}", dz.shape());
+
             let dz_at = dz.matmul(&current[l - 1].a.t()?)?;
             let batch_div = Tensor::full(batch as f32, dz_at.shape(), &self.device)?;
             let dw = dz_at.div(&batch_div)?;
-            // println!("l {l} dw size: {:?}", dw.shape());
+
             let dz_sum = dz.sum_keepdim(1)?;
             let batch_div = Tensor::full(batch as f32, dz_sum.shape(), &self.device)?;
             let db = dz_sum.div(&batch_div)?;
@@ -285,7 +254,7 @@ impl LinearNetwork {
             let batch_len = mini_batches.len();
             for (x_part, y_part) in mini_batches {
                 let mut store = Vec::<TrainLinear>::new();
-                // println!("x part: {x_part:#?} y part: {y_part:#?}");
+
                 let a = self.forward(&x_part, Some(&mut store))?;
                 let small = Tensor::full(1e-8f32, a.shape(), &self.device)?.t()?;
                 let a_plus_eps_log = (&(a.t()? + small)?).log()?;
@@ -300,7 +269,7 @@ impl LinearNetwork {
                 for l in 1..self.layers_sizes.len() {
                     let w_change = Tensor::from_slice(&[learning_rate], (1, 1), &self.device)?
                         .broadcast_mul(&store[l].dw)?;
-                    // println!(" g{l} with w_change: {:?}", w_change.shape());
+
                     self.layers[l - 1].w = (&self.layers[l - 1].w - w_change)?;
                     self.layers[l - 1].b = (&self.layers[l - 1].b
                         - Tensor::from_slice(&[learning_rate], (1, 1), &self.device)?
@@ -320,10 +289,8 @@ impl LinearNetwork {
     // Determine the ratio of correct answers.
     fn predict(&self, x: &Tensor, y: &Tensor) -> anyhow::Result<f32> {
         let a = self.forward(&x, None)?;
-        // println!("x shape {:?} y shape: {:?}  a shape {:?}", x.shape(), y.shape(), a.shape());
         let y_hat = a.argmax(0)?;
         let y_real = y.argmax(1)?;
-        // println!("y_hat shape {:?} y_real shape: {:?}  ", y_hat.shape(), y_real.shape());
         let same = y_hat.eq(&y_real)?.to_dtype(DType::F32)?;
         let v = same.mean_all()?.to_scalar::<f32>()?;
         Ok(v)
@@ -331,7 +298,6 @@ impl LinearNetwork {
 
     fn classify(&self, x: &Tensor) -> anyhow::Result<Vec<u8>> {
         let x = x.to_device(&self.device)?;
-        // let y = y.to_device(&self.device)?;
         let a = self.forward(&x, None)?;
         let y_hat = a.argmax(0)?;
         let y_hat_vec = y_hat.to_vec1::<u32>()?;
