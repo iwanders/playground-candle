@@ -33,13 +33,13 @@ struct TrainLinear {
     db: Tensor,
 }
 
-struct LinearNetwork {
+struct LinearNetworkManual {
     layers_sizes: Vec<usize>,
     layers: Vec<LinearLayer>,
     device: Device,
 }
 
-impl LinearNetwork {
+impl LinearNetworkManual {
     // This collects groups of 'batch' size from inputs and outputs.
     fn create_mini_batches(
         x: &Tensor,
@@ -123,7 +123,7 @@ impl LinearNetwork {
 
         let layers = Self::create_layers(&layers_sizes, &device)?;
 
-        Ok(LinearNetwork {
+        Ok(LinearNetworkManual {
             layers_sizes,
             layers,
             device,
@@ -334,7 +334,7 @@ pub fn main() -> MainResult {
     let device = Device::Cpu;
     // let device = Device::new_cuda(0)?;
 
-    let mut ann = LinearNetwork::new(&[10, 10], 28 * 28, device)?;
+    let mut ann = LinearNetworkManual::new(&[10, 10], 28 * 28, device)?;
 
     let mut t = vec![];
     let r = ann.forward(&m.train_images.i((0..64, ..))?, Some(&mut t))?;
@@ -398,7 +398,7 @@ mod test {
         let x = Tensor::new(&x, &self.device)?;
         let y: [u8; 5] = [1, 8, 7, 3, 1];
         let y = Tensor::new(&y, &self.device)?;
-        let mini_batches = LinearNetwork::create_mini_batches(&x, &y, 2)?;
+        let mini_batches = LinearNetworkManual::create_mini_batches(&x, &y, 2)?;
         println!("mini_batches: {:#?} ", mini_batches);
 
         for (x_part, y_part) in mini_batches {
