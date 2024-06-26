@@ -3,6 +3,9 @@
 use candle_nn::{VarMap, VarBuilder};
 use candle_nn::{Sequential, seq, linear, Linear};
 use candle_core::{DType, Device, Result, Tensor, Module}; 
+use candle_core::IndexOp;
+
+use crate::util;
 
 
 pub struct LinearNetworkNetwork {
@@ -50,6 +53,7 @@ impl LinearNetworkNetwork {
         layers_sizes.insert(0, input_size);
 
         let network = Self::create_network(&layers_sizes, &device)?;
+        // println!("Network: {network:?}");
 
         Ok(LinearNetworkNetwork {
             network,
@@ -64,5 +68,35 @@ impl LinearNetworkNetwork {
     ) -> Result<Tensor> {
         self.network.forward(input)
     }
+}
+
+
+
+pub type MainResult = anyhow::Result<()>;
+pub fn main() -> MainResult {
+    let args = std::env::args().collect::<Vec<String>>();
+    let m = candle_datasets::vision::mnist::load_dir(&args[1])?;
+
+    println!("train-images: {:?}", m.train_images.shape());
+    println!("train-labels: {:?}", m.train_labels.shape());
+    println!("test-images: {:?}", m.test_images.shape());
+    println!("test-labels: {:?}", m.test_labels.shape());
+
+    println!("m.train_labels[0]: {:?}", m.train_labels.get(0));
+    let train_0 = m.train_images.get(0)?;
+    println!("train_0: {:?}", train_0);
+    let img_0 = util::mnist_image(&train_0)?;
+    img_0.save("/tmp/image_0.png")?;
+
+    let device = Device::Cpu;
+    // let device = Device::new_cuda(0)?;
+
+    let mut ann = LinearNetworkNetwork::new(&[10, 10], 28 * 28, device)?;
+
+    // let mut t = vec![];
+    let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
+    println!("r: {:?}", r.get(0)?.to_vec1::<f32>()?);
+    // println!("t: {:?}", t);
+    Ok(())
 }
 

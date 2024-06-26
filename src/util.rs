@@ -40,3 +40,16 @@ pub fn create_mini_batches(
     Ok(mini)
 }
 
+pub fn mnist_image(v: &Tensor) -> anyhow::Result<image::GrayImage> {
+    // image is 28x28, input tensor is 1x784.
+    let mut img = image::GrayImage::new(28, 28);
+    for i in 0..v.shape().elem_count() {
+        let c: f32 = v.get(i)?.to_vec0()?;
+        let x = i as u32 % 28;
+        let y = i as u32 / 28;
+        let v: u8 = (c * 255.0f32) as u8;
+        *img.get_pixel_mut(x, y) = image::Luma([v]);
+    }
+    Ok(img)
+}
+

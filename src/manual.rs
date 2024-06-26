@@ -1,6 +1,7 @@
 use candle_core::IndexOp;
 use candle_core::{DType, Device, Tensor};
 use candle_nn::ops::softmax;
+use crate::util;
 
 // Solving mnist fully connected linear layers.
 
@@ -209,7 +210,7 @@ impl LinearNetworkManual {
         for l in 0..iterations {
             let mut loss = 0.0f32;
             let mut acc = 0.0f32;
-            let mini_batches = crate::util::create_mini_batches(&x, &y, batch, &self.device)?;
+            let mini_batches = util::create_mini_batches(&x, &y, batch, &self.device)?;
             let batch_len = mini_batches.len();
             for (x_part, y_part) in mini_batches {
                 let mut store = Vec::<TrainLinear>::new();
@@ -264,18 +265,6 @@ impl LinearNetworkManual {
     }
 }
 
-fn mnist_image(v: &Tensor) -> anyhow::Result<image::GrayImage> {
-    // image is 28x28, input tensor is 1x784.
-    let mut img = image::GrayImage::new(28, 28);
-    for i in 0..v.shape().elem_count() {
-        let c: f32 = v.get(i)?.to_vec0()?;
-        let x = i as u32 % 28;
-        let y = i as u32 / 28;
-        let v: u8 = (c * 255.0f32) as u8;
-        *img.get_pixel_mut(x, y) = image::Luma([v]);
-    }
-    Ok(img)
-}
 
 pub type MainResult = anyhow::Result<()>;
 pub fn main() -> MainResult {
@@ -290,7 +279,7 @@ pub fn main() -> MainResult {
     println!("m.train_labels[0]: {:?}", m.train_labels.get(0));
     let train_0 = m.train_images.get(0)?;
     println!("train_0: {:?}", train_0);
-    let img_0 = mnist_image(&train_0)?;
+    let img_0 = util::mnist_image(&train_0)?;
     img_0.save("/tmp/image_0.png")?;
 
     let device = Device::Cpu;
@@ -319,7 +308,7 @@ pub fn main() -> MainResult {
     let digits = ann.classify(&m.test_images.i((test_range.clone(), ..))?)?;
     for (i, digit) in test_range.zip(digits.iter()) {
         let this_image = m.test_images.get(i)?;
-        let this_image = mnist_image(&this_image)?;
+        let this_image = util::mnist_image(&this_image)?;
         this_image.save(format!("/tmp/image_{i}_d_{digit}.png"))?;
     }
 

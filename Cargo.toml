@@ -17,6 +17,7 @@ serde = { version = "1.0", features = ["derive"] }
 
 candle-core = "0.5.1"
 candle-nn = "0.5.1"
+#candle-nn = {path="../candle/candle-nn"}
 candle-transformers = "0.5.1"
 candle-datasets = "0.5.1"
 
