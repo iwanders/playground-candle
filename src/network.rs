@@ -39,7 +39,7 @@ impl LinearNetworkNetwork {
             let d = (sizes[l - 1] as f32).sqrt();
             let w = w.div(&Tensor::full(d, (sizes[l], sizes[l - 1]), device)?)?;
 
-            let b = Tensor::full(0f32, (sizes[l], 1), device)?;
+            let b = Tensor::full(0f32, (1, sizes[l]), device)?;
 
             network = network.add(Linear::new(w, Some(b)));
         }
@@ -95,7 +95,7 @@ pub fn main() -> MainResult {
 
     // let mut t = vec![];
     let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
-    println!("r: {:?}", r.get(0)?.to_vec1::<f32>()?);
+    println!("r: {:?}", r.t()?.get(0)?.to_vec1::<f32>()?);
     // println!("t: {:?}", t);
     Ok(())
 }
