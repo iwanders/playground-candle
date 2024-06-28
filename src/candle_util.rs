@@ -1,5 +1,5 @@
 use candle_core::IndexOp;
-use candle_core::{Tensor};
+use candle_core::Tensor;
 
 pub mod prelude {
     use super::PrintableTensorTrait;
@@ -11,27 +11,28 @@ pub trait PrintableTensorTrait {
 
 impl PrintableTensorTrait for Tensor {
     fn p(&self) -> PrintableTensor {
-        PrintableTensor{
-            tensor: self
-        }
+        PrintableTensor { tensor: self }
     }
 }
 
-
 pub struct PrintableTensor<'a> {
-    tensor: &'a Tensor
+    tensor: &'a Tensor,
 }
 
 impl<'a> std::fmt::Debug for PrintableTensor<'a> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        // Assume tensors are 2D? 
+        // Assume tensors are 2D?
         write!(fmt, "Tensor: {:?}: ", self.tensor.shape())?;
         let dim_count = self.tensor.dims().len();
         if dim_count == 0 {
             write!(fmt, "∅")?;
         }
         if dim_count == 1 {
-            write!(fmt, "{:?}",self.tensor.to_vec1::<f32>().map_err(|_| std::fmt::Error)?)?;
+            write!(
+                fmt,
+                "{:?}",
+                self.tensor.to_vec1::<f32>().map_err(|_| std::fmt::Error)?
+            )?;
         }
         if dim_count == 2 {
             let mut v = fmt.debug_list();
@@ -40,7 +41,10 @@ impl<'a> std::fmt::Debug for PrintableTensor<'a> {
                 let r = self.tensor.get(y).map_err(|_| std::fmt::Error)?;
                 // write!(fmt, "{:?}", r.to_vec1::<f32>().map_err(|_| std::fmt::Error)?)?;
                 // v.entry(&format!("{:?}", r.to_vec1::<f32>().map_err(|_| std::fmt::Error)?));
-                v.entry(&format_args!("{:?}", r.to_vec1::<f32>().map_err(|_| std::fmt::Error)?));
+                v.entry(&format_args!(
+                    "{:?}",
+                    r.to_vec1::<f32>().map_err(|_| std::fmt::Error)?
+                ));
             }
             v.finish()?;
         }
@@ -53,7 +57,7 @@ mod test {
     use super::*;
     #[test]
     fn test_candle_print() -> anyhow::Result<()> {
-        use candle_core::{Tensor, Device::Cpu};
+        use candle_core::{Device::Cpu, Tensor};
         use candle_nn::{Linear, Module};
 
         let w = Tensor::new(&[[1f32, 2.], [3., 4.], [5., 6.]], &Cpu)?;

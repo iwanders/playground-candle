@@ -1,7 +1,7 @@
+use crate::util;
 use candle_core::IndexOp;
 use candle_core::{DType, Device, Tensor};
 use candle_nn::ops::softmax;
-use crate::util;
 
 // Solving mnist fully connected linear layers.
 
@@ -14,7 +14,6 @@ use crate::util;
 // Others;
 // https://machinelearningmastery.com/how-to-develop-a-convolutional-neural-network-from-scratch-for-mnist-handwritten-digit-classification/
 // Interesting; https://www.kaggle.com/code/prashant111/mnist-deep-neural-network-with-keras
-
 
 #[derive(Clone, Debug)]
 struct LinearLayer {
@@ -41,7 +40,6 @@ struct LinearNetworkManual {
 }
 
 impl LinearNetworkManual {
-
     fn sigmoid(&self, z: &Tensor) -> anyhow::Result<Tensor> {
         let one = Tensor::full(1.0f32, z.shape(), &self.device)?;
         Ok((&one / (&one + z.neg()?.exp()?)?)?)
@@ -51,7 +49,6 @@ impl LinearNetworkManual {
         let one = Tensor::full(1.0f32, z.shape(), &self.device)?;
         Ok((&s * (one - &s)?)?)
     }
-
 
     pub fn create_layers(sizes: &[usize], device: &Device) -> anyhow::Result<Vec<LinearLayer>> {
         use rand::prelude::*;
@@ -168,7 +165,6 @@ impl LinearNetworkManual {
         let dza = dz.matmul(&current[l - 1].a.t()?)?;
         let dw = dza.broadcast_div(&batch_div)?;
 
-
         let dzsum = dz.sum_keepdim(1)?;
         let db = dzsum.broadcast_div(&batch_div)?;
 
@@ -264,7 +260,6 @@ impl LinearNetworkManual {
         Ok(y_hat_vec.iter().map(|x| *x as u8).collect())
     }
 }
-
 
 pub type MainResult = anyhow::Result<()>;
 pub fn main() -> MainResult {

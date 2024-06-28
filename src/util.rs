@@ -1,12 +1,12 @@
 use candle_core::IndexOp;
 use candle_core::{DType, Device, Tensor};
 
-
 // This collects groups of 'batch' size from inputs and outputs.
 pub fn create_mini_batches(
     x: &Tensor,
     y: &Tensor,
-    batch: usize, device: &Device
+    batch: usize,
+    device: &Device,
 ) -> anyhow::Result<Vec<(Tensor, Tensor)>> {
     let mut mini = vec![];
     use rand::prelude::*;
@@ -52,4 +52,3 @@ pub fn mnist_image(v: &Tensor) -> anyhow::Result<image::GrayImage> {
     }
     Ok(img)
 }
-
