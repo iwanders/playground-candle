@@ -321,7 +321,7 @@ mod test {
     #[test]
     fn matrix_mult() -> anyhow::Result<()> {
         let data: [f32; 6] = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t = Tensor::new(&data, &self.device)?;
+        let t = Tensor::new(&data, &Device::Cpu)?;
         println!("tensor: {:?}", t.to_vec1::<f32>()?);
         println!("t: {t:#?}");
         let t = t.reshape((2, 3))?;
@@ -346,10 +346,10 @@ mod test {
             [7.0, 8.0],
             [9.0, 10.0],
         ];
-        let x = Tensor::new(&x, &self.device)?;
+        let x = Tensor::new(&x, &Device::Cpu)?;
         let y: [u8; 5] = [1, 8, 7, 3, 1];
-        let y = Tensor::new(&y, &self.device)?;
-        let mini_batches = LinearNetworkManual::create_mini_batches(&x, &y, 2)?;
+        let y = Tensor::new(&y, &Device::Cpu)?;
+        let mini_batches = crate::util::create_mini_batches(&x, &y, 2, &Device::Cpu)?;
         println!("mini_batches: {:#?} ", mini_batches);
 
         for (x_part, y_part) in mini_batches {
