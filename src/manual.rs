@@ -70,8 +70,8 @@ impl LinearNetworkManual {
 
             let b = Tensor::full(0f32, (sizes[l], 1), device)?;
 
-            println!("l{l} w: {:?}", w.p());
-            println!("l{l} b: {:?}", b.p());
+            // println!("l{l} w: {:?}", w.p());
+            // println!("l{l} b: {:?}", b.p());
             res.push(LinearLayer { w, b });
         }
 
@@ -122,9 +122,9 @@ impl LinearNetworkManual {
             let w = &self.layers[l].w;
             let b = &self.layers[l].b;
             let zl = w.matmul(&a)?.broadcast_add(&b)?;
-            println!("l{l} zl: {:?}", zl.p());
+            // println!("l{l} zl: {:?}", zl.p());
             a = self.sigmoid(&zl)?;
-            println!("l{l} a: {:?}", a.p());
+            // println!("l{l} a: {:?}", a.p());
             z = Some(zl.clone());
             if let Some(ref mut tl) = train.as_mut() {
                 tl.push(TrainLinear {
@@ -138,9 +138,9 @@ impl LinearNetworkManual {
         }
 
         let z = z.unwrap();
-        println!("softmax in: {:?}", z.p());
+        // println!("softmax in: {:?}", z.p());
         let r = softmax(&z, 0)?;
-        println!("r a: {:?}", r.p());
+        // println!("r a: {:?}", r.p());
         if let Some(ref mut tl) = train.as_mut() {
             tl.push(TrainLinear {
                 layer: self.layers.last().unwrap().clone(),
@@ -210,12 +210,12 @@ impl LinearNetworkManual {
     ) -> anyhow::Result<()> {
         let x = x.to_device(&self.device)?;
         let y = y.to_device(&self.device)?;
+        let mini_batches = util::create_mini_batches(&x, &y, batch, &self.device)?;
         for l in 0..iterations {
             let mut loss = 0.0f32;
             let mut acc = 0.0f32;
-            let mini_batches = util::create_mini_batches(&x, &y, batch, &self.device)?;
             let batch_len = mini_batches.len();
-            for (x_part, y_part) in mini_batches {
+            for (x_part, y_part) in mini_batches.iter() {
                 let mut store = Vec::<TrainLinear>::new();
 
                 let a = self.forward(&x_part, Some(&mut store))?;
