@@ -5,10 +5,11 @@ use candle_core::{DType, Device, Module, Result, Tensor};
 use candle_nn::{linear, seq, Linear, Sequential, Activation};
 use candle_nn::{VarBuilder, VarMap};
 use candle_nn::ops::softmax;
+use candle_nn::Optimizer;
 
 use crate::candle_util::prelude::*;
 use crate::util;
-
+use rand::prelude::*;
 
 pub struct SoftmaxLayer {
   pub dim: usize
@@ -33,32 +34,34 @@ pub struct LinearNetworkNetwork {
 }
 
 impl LinearNetworkNetwork {
-    fn create_network(sizes: &[usize], device: &Device) -> Result<Sequential> {
+    fn create_network(vs: VarBuilder, sizes: &[usize], device: &Device) -> Result<Sequential> {
         use rand::prelude::*;
         use rand_xorshift::XorShiftRng;
         let mut rng = XorShiftRng::seed_from_u64(1);
 
-        // let varmap = VarMap::new();
-        // let vb = VarBuilder::from_varmap(&varmap, DType::F32, &Device::Cpu);
-        // let model = linear(2, 1, vb.pp("linear"))?;
-        // , vb.pp(format!("layer{}", l - 1))
+        // Can probabyl do some 'contains' tricks to ensure we seed with the exact same values.
 
         let mut network = seq();
 
         for l in 1..sizes.len() {
-            let w_size = sizes[l] * sizes[l - 1];
-            let mut v: Vec<f32> = Vec::with_capacity(w_size);
-            for _ in 0..w_size {
-                v.push(rng.sample(rand_distr::StandardNormal));
-            }
-            let w = Tensor::from_vec(v, (sizes[l], sizes[l - 1]), device)?;
-            let d = (sizes[l - 1] as f32).sqrt();
-            let w = w.div(&Tensor::full(d, (sizes[l], sizes[l - 1]), device)?)?;
+            if false {
+                let w_size = sizes[l] * sizes[l - 1];
+                let mut v: Vec<f32> = Vec::with_capacity(w_size);
+                for _ in 0..w_size {
+                    v.push(rng.sample(rand_distr::StandardNormal));
+                }
+                let w = Tensor::from_vec(v, (sizes[l], sizes[l - 1]), device)?;
+                let d = (sizes[l - 1] as f32).sqrt();
+                let w = w.div(&Tensor::full(d, (sizes[l], sizes[l - 1]), device)?)?;
 
-            let b = Tensor::full(0f32, (1, sizes[l]), device)?;
-            println!("l{l} w: {:?}", w.p());
-            println!("l{l} b: {:?}", b.p());
-            network = network.add(Linear::new(w, Some(b)));
+                let b = Tensor::full(0f32, (1, sizes[l]), device)?;
+                // println!("l{l} w: {:?}", w.p());
+                // println!("l{l} b: {:?}", b.p());
+                network = network.add(Linear::new(w, Some(b)));
+            } else {
+                let layer = candle_nn::linear(sizes[l-1], sizes[l], vs.pp(format!("fc{l}")))?;
+                network = network.add(layer);
+            }
 
             // Add sigmoid on all but the last layer.
             if l != (sizes.len() - 1) {
@@ -69,13 +72,16 @@ impl LinearNetworkNetwork {
         Ok(network)
     }
 
-    pub fn new(layers_size: &[usize], input_size: usize, device: Device) -> Result<Self> {
+    pub fn new(vs: VarBuilder, layers_size: &[usize], input_size: usize, device: Device) -> Result<Self> {
         let mut layers_sizes = layers_size.to_vec();
+
+        // let mut varmap = VarMap::new();
+        // let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
 
         // First layer is input_size long.
         layers_sizes.insert(0, input_size);
 
-        let network = Self::create_network(&layers_sizes, &device)?;
+        let network = Self::create_network(vs, &layers_sizes, &device)?;
         // println!("Network: {network:?}");
 
         Ok(LinearNetworkNetwork { network, device })
@@ -83,7 +89,6 @@ impl LinearNetworkNetwork {
 
     pub fn forward(&self, input: &Tensor) -> Result<Tensor> {
         let z = self.network.forward(input)?;
-        // let r = softmax(&z, 0)?;
         Ok(z)
     }
 
@@ -93,11 +98,53 @@ impl LinearNetworkNetwork {
             xs = self.network.layer(i).unwrap().forward(&xs)?;
             println!("xs{i}: {:?}", xs.p());
         }
-        // for layer in self.layers.iter() {
-            // xs = layer.forward(&xs)?
-        // }
         Ok(xs)
     }
+
+
+}
+
+pub fn fit(
+    x: &Tensor,
+    y: &Tensor,
+    x_test: &Tensor,
+    y_test: &Tensor,
+    layers: &[usize],
+    learning_rate: f32,
+    iterations: usize,
+    batch: usize,
+) -> anyhow::Result<LinearNetworkNetwork> {
+    use candle_core::D;
+    use candle_nn::loss;
+    use candle_nn::ops;
+    let device = Device::cuda_if_available(0)?;
+    let x = x.to_device(&device)?;
+    let y = y.to_device(&device)?;
+    let x_test = x_test.to_device(&device)?;
+    let y_test = y_test.to_device(&device)?;
+
+
+    let mini_batches = util::create_mini_batches(&x, &y, batch, &device)?;
+    let batch_len = mini_batches.len();
+    let mut batch_idxs = (0..batch_len).collect::<Vec<usize>>();
+
+    let mut varmap = VarMap::new();
+    let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+    let model = LinearNetworkNetwork::new(vs.clone(), layers, 28*28, device)?;
+
+
+    let adamw_params = candle_nn::ParamsAdamW {
+        lr: learning_rate as f64,
+        ..Default::default()
+    };
+    let mut opt = candle_nn::AdamW::new(varmap.all_vars(), adamw_params)?;
+
+
+    for epoch in 1..iterations {
+        
+
+    }
+    Ok(model)
 }
 
 pub type MainResult = anyhow::Result<()>;
@@ -119,12 +166,26 @@ pub fn main() -> MainResult {
     let device = Device::Cpu;
     // let device = Device::new_cuda(0)?;
 
-    let mut ann = LinearNetworkNetwork::new(&[10, 10], 28 * 28, device)?;
+    let mut varmap = VarMap::new();
+    let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+    let mut ann = LinearNetworkNetwork::new(vs, &[10, 10], 28 * 28, device)?;
 
     // let mut t = vec![];
-    // let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
-    let r = ann.step_forward(&m.train_images.i((0..64, ..))?)?;
+    let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
+    // let r = ann.step_forward(&m.train_images.i((0..64, ..))?)?;
     println!("r: {:?}", r.t()?.get(0)?.to_vec1::<f32>()?);
-    // println!("t: {:?}", t);
+    
+    let learning_rate = 0.1;
+    let iterations = 3;
+    let batch_size = 64;
+    fit(&m.train_images,
+        &m.train_labels,
+        &m.test_images,
+        &m.test_labels,
+        &[10, 10],
+        learning_rate,
+        iterations,
+        batch_size)?;
+
     Ok(())
 }
