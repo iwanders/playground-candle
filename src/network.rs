@@ -2,10 +2,30 @@
 // use candle_core::IndexOp;
 use candle_core::IndexOp;
 use candle_core::{DType, Device, Module, Result, Tensor};
-use candle_nn::{linear, seq, Linear, Sequential};
+use candle_nn::{linear, seq, Linear, Sequential, Activation};
 use candle_nn::{VarBuilder, VarMap};
+use candle_nn::ops::softmax;
 
+use crate::candle_util::prelude::*;
 use crate::util;
+
+
+pub struct SoftmaxLayer {
+  pub dim: usize
+}
+impl SoftmaxLayer {
+    pub fn new(dim: usize) -> Self {
+        Self {
+            dim,
+        }
+    }
+}
+impl Module for SoftmaxLayer {
+    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
+        softmax(&xs, self.dim)
+    }
+}
+
 
 pub struct LinearNetworkNetwork {
     network: Sequential,
@@ -36,9 +56,16 @@ impl LinearNetworkNetwork {
             let w = w.div(&Tensor::full(d, (sizes[l], sizes[l - 1]), device)?)?;
 
             let b = Tensor::full(0f32, (1, sizes[l]), device)?;
-
+            println!("l{l} w: {:?}", w.p());
+            println!("l{l} b: {:?}", b.p());
             network = network.add(Linear::new(w, Some(b)));
+
+            // Add sigmoid on all but the last layer.
+            if l != (sizes.len() - 1) {
+                network = network.add(Activation::Sigmoid);
+            }
         }
+        network = network.add(SoftmaxLayer::new(1));
         Ok(network)
     }
 
@@ -55,7 +82,21 @@ impl LinearNetworkNetwork {
     }
 
     pub fn forward(&self, input: &Tensor) -> Result<Tensor> {
-        self.network.forward(input)
+        let z = self.network.forward(input)?;
+        // let r = softmax(&z, 0)?;
+        Ok(z)
+    }
+
+    pub fn step_forward(&self, input: &Tensor) -> Result<Tensor> {
+        let mut xs = input.clone();
+        for i in 0..self.network.len() {
+            xs = self.network.layer(i).unwrap().forward(&xs)?;
+            println!("xs{i}: {:?}", xs.p());
+        }
+        // for layer in self.layers.iter() {
+            // xs = layer.forward(&xs)?
+        // }
+        Ok(xs)
     }
 }
 
@@ -81,7 +122,8 @@ pub fn main() -> MainResult {
     let mut ann = LinearNetworkNetwork::new(&[10, 10], 28 * 28, device)?;
 
     // let mut t = vec![];
-    let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
+    // let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
+    let r = ann.step_forward(&m.train_images.i((0..64, ..))?)?;
     println!("r: {:?}", r.t()?.get(0)?.to_vec1::<f32>()?);
     // println!("t: {:?}", t);
     Ok(())

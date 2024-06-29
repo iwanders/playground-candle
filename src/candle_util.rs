@@ -1,8 +1,8 @@
-use candle_core::IndexOp;
+// use candle_core::IndexOp;
 use candle_core::Tensor;
 
 pub mod prelude {
-    use super::PrintableTensorTrait;
+    pub use super::PrintableTensorTrait;
 }
 
 pub trait PrintableTensorTrait {
@@ -22,7 +22,7 @@ pub struct PrintableTensor<'a> {
 impl<'a> std::fmt::Debug for PrintableTensor<'a> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         // Assume tensors are 2D?
-        write!(fmt, "Tensor: {:?}: ", self.tensor.shape())?;
+        write!(fmt, "Tensor: {:?} ({:?}): ", self.tensor.shape(), self.tensor.dtype())?;
         let dim_count = self.tensor.dims().len();
         if dim_count == 0 {
             write!(fmt, "∅")?;

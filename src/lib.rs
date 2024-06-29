@@ -5,6 +5,9 @@ pub mod util;
 
 pub type MainResult = anyhow::Result<()>;
 pub fn main() -> MainResult {
-    network::main()
-    // manual::main()
+    if std::env::var("MNIST_MANUAL").is_ok() {
+        manual::main()
+    } else {
+        network::main()
+    }
 }

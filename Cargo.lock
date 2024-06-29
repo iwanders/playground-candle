@@ -325,7 +325,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "311d8dbe293aa3b5c34f6a57727fafd67d17a74fa8b65276501237c233b34ffd"
 dependencies = [
  "byteorder",
- "candle-kernels",
+ "candle-kernels 0.5.1",
+ "cudarc",
+ "gemm",
+ "half",
+ "memmap2",
+ "num-traits",
+ "num_cpus",
+ "rand",
+ "rand_distr",
+ "rayon",
+ "safetensors",
+ "thiserror",
+ "yoke",
+ "zip",
+]
+
+[[package]]
+name = "candle-core"
+version = "0.6.0"
+dependencies = [
+ "byteorder",
+ "candle-kernels 0.6.0",
  "cudarc",
  "gemm",
  "half",
@@ -343,13 +364,11 @@ dependencies = [
 
 [[package]]
 name = "candle-datasets"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f75237206d74b58f78b728ef1ad6662d12f727aa4dbc5e55d71579f21417d920"
+version = "0.6.0"
 dependencies = [
  "byteorder",
- "candle-core",
- "candle-nn",
+ "candle-core 0.6.0",
+ "candle-nn 0.6.0",
  "hf-hub",
  "image",
  "memmap2",
@@ -369,12 +388,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "candle-kernels"
+version = "0.6.0"
+dependencies = [
+ "bindgen_cuda",
+]
+
+[[package]]
 name = "candle-nn"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1efb293365959fc5feacbd93fa918980df2d9f2fb89853af02e33a830c10b49b"
 dependencies = [
- "candle-core",
+ "candle-core 0.5.1",
+ "half",
+ "num-traits",
+ "rayon",
+ "safetensors",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "candle-nn"
+version = "0.6.0"
+dependencies = [
+ "candle-core 0.6.0",
  "half",
  "num-traits",
  "rayon",
@@ -390,8 +429,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b28968e2643d21c259d045f5eb42de07b0a3b7fc86ec8571aeb852721f9c189e"
 dependencies = [
  "byteorder",
- "candle-core",
- "candle-nn",
+ "candle-core 0.5.1",
+ "candle-nn 0.5.1",
  "fancy-regex",
  "num-traits",
  "rand",
@@ -1636,9 +1675,9 @@ name = "playground_candle"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "candle-core",
+ "candle-core 0.6.0",
  "candle-datasets",
- "candle-nn",
+ "candle-nn 0.6.0",
  "candle-transformers",
  "image",
  "imageproc",
