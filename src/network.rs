@@ -1,7 +1,7 @@
 // use candle_nn::sequential::seq;
 // use candle_core::IndexOp;
 use candle_core::IndexOp;
-use candle_core::{DType, Device, Module, Result, Tensor};
+use candle_core::{DType, Device, Module, Result, Tensor, Shape, Var};
 use candle_nn::{linear, seq, Linear, Sequential, Activation};
 use candle_nn::{VarBuilder, VarMap};
 use candle_nn::ops::softmax;
@@ -33,36 +33,16 @@ pub struct LinearNetworkNetwork {
     device: Device,
 }
 
+
 impl LinearNetworkNetwork {
     fn create_network(vs: VarBuilder, sizes: &[usize], device: &Device) -> Result<Sequential> {
-        use rand::prelude::*;
-        use rand_xorshift::XorShiftRng;
-        let mut rng = XorShiftRng::seed_from_u64(1);
-
-        // Can probabyl do some 'contains' tricks to ensure we seed with the exact same values.
-
         let mut network = seq();
-
         for l in 1..sizes.len() {
-            if false {
-                let w_size = sizes[l] * sizes[l - 1];
-                let mut v: Vec<f32> = Vec::with_capacity(w_size);
-                for _ in 0..w_size {
-                    v.push(rng.sample(rand_distr::StandardNormal));
-                }
-                let w = Tensor::from_vec(v, (sizes[l], sizes[l - 1]), device)?;
-                let d = (sizes[l - 1] as f32).sqrt();
-                let w = w.div(&Tensor::full(d, (sizes[l], sizes[l - 1]), device)?)?;
-
-                let b = Tensor::full(0f32, (1, sizes[l]), device)?;
-                // println!("l{l} w: {:?}", w.p());
-                // println!("l{l} b: {:?}", b.p());
-                network = network.add(Linear::new(w, Some(b)));
-            } else {
-                let layer = candle_nn::linear(sizes[l-1], sizes[l], vs.pp(format!("fc{l}")))?;
-                network = network.add(layer);
+            let layer = candle_nn::linear(sizes[l-1], sizes[l], vs.pp(format!("fc{l}")))?;
+            if (l == 1) {
+                // println!("w: {:?}", layer.weight().p());
             }
-
+            network = network.add(layer);
             // Add sigmoid on all but the last layer.
             if l != (sizes.len() - 1) {
                 network = network.add(Activation::Sigmoid);
@@ -72,17 +52,41 @@ impl LinearNetworkNetwork {
         Ok(network)
     }
 
+    pub fn load_default(vm: &VarMap, sizes: &[usize], device: &Device) -> Result<()> {
+        use rand::prelude::*;
+        use rand_xorshift::XorShiftRng;
+        let mut rng = XorShiftRng::seed_from_u64(1);
+        for l in 1..sizes.len() {
+            let w_size = sizes[l] * sizes[l - 1];
+            let mut v: Vec<f32> = Vec::with_capacity(w_size);
+            for _ in 0..w_size {
+                v.push(rng.sample(rand_distr::StandardNormal));
+            }
+            let w = Tensor::from_vec(v, (sizes[l], sizes[l - 1]), device)?;
+            let d = (sizes[l - 1] as f32).sqrt();
+            let w = w.div(&Tensor::full(d, (sizes[l], sizes[l - 1]), device)?)?;
+            let b = Tensor::full(0f32, (sizes[l],), device)?;
+
+            if (l == 1) {
+                // println!("w: {:?}", w.p());
+            }
+            let z = vm.data();
+            let mut z = z.lock().unwrap();
+            let name_w = format!("fc{l}.weight");
+            let name_b = format!("fc{l}.bias");
+            z.insert(name_w, Var::from_tensor(&w)?);
+            z.insert(name_b, Var::from_tensor(&b)?);
+        }
+        Ok(())
+    }
+
     pub fn new(vs: VarBuilder, layers_size: &[usize], input_size: usize, device: Device) -> Result<Self> {
         let mut layers_sizes = layers_size.to_vec();
 
-        // let mut varmap = VarMap::new();
-        // let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-
         // First layer is input_size long.
-        layers_sizes.insert(0, input_size);
+        // layers_sizes.insert(0, input_size);
 
         let network = Self::create_network(vs, &layers_sizes, &device)?;
-        // println!("Network: {network:?}");
 
         Ok(LinearNetworkNetwork { network, device })
     }
@@ -110,7 +114,6 @@ impl LinearNetworkNetwork {
         let v = same.mean_all()?.to_scalar::<f32>()?;
         Ok(v)
     }
-
 
     fn classify(&self, x: &Tensor) -> anyhow::Result<Vec<u8>> {
         let x = x.to_device(&self.device)?;
@@ -161,10 +164,12 @@ pub fn fit(
     // let y_test = convert_outputs(&y_test)?;
 
 
-
+    let mut layers = layers.to_vec();
     let mut varmap = VarMap::new();
+    layers.insert(0, 28*28);
+    LinearNetworkNetwork::load_default(&varmap, &layers, &device)?;
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    let model = LinearNetworkNetwork::new(vs.clone(), layers, 28*28, device)?;
+    let model = LinearNetworkNetwork::new(vs.clone(), &layers, 28*28, device)?;
 
     /*
     let adamw_params = candle_nn::ParamsAdamW {
@@ -179,15 +184,9 @@ pub fn fit(
 
     for epoch in 1..iterations {
         let logits = model.forward(&x)?;
-        // println!("Logit first: {:?}", logits.i((0..1, ..))?.p());
-        // let log_sm = ops::log_softmax(&logits, D::Minus1)?;
         let log_sm = logits.log()?;  // softmax is done by the network, so only need log here.
-        // println!("log_sm first: {:?}", log_sm.i((0..1, ..))?.p());
-        // println!("y shape: {:?}", y.shape());
         let loss = loss::nll(&log_sm, &y)?;
         sgd.backward_step(&loss)?;
-
-
         let test_accuracy = model.predict(&x_test, &y_test)?;
         println!(
             "{epoch:4} train loss: {:8.5} test acc: {:5.2}%",
@@ -220,7 +219,7 @@ pub fn main() -> MainResult {
 
     let mut varmap = VarMap::new();
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    let mut ann = LinearNetworkNetwork::new(vs, &[10, 10], 28 * 28, device)?;
+    let mut ann = LinearNetworkNetwork::new(vs, &[28*28, 10, 10], 28 * 28, device)?;
 
     // let mut t = vec![];
     let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
