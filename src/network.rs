@@ -105,13 +105,20 @@ impl LinearNetworkNetwork {
     fn predict(&self, x: &Tensor, y: &Tensor) -> anyhow::Result<f32> {
         let a = self.forward(&x)?;
         let y_hat = a.argmax(1)?;
-        // let y_real = y.argmax(1)?;
         let y_real = y.to_dtype(DType::U32)?;
         let same = y_hat.eq(&y_real)?.to_dtype(DType::F32)?;
         let v = same.mean_all()?.to_scalar::<f32>()?;
         Ok(v)
     }
 
+
+    fn classify(&self, x: &Tensor) -> anyhow::Result<Vec<u8>> {
+        let x = x.to_device(&self.device)?;
+        let a = self.forward(&x)?;
+        let y_hat = a.argmax(1)?;
+        let y_hat_vec = y_hat.to_vec1::<u32>()?;
+        Ok(y_hat_vec.iter().map(|x| *x as u8).collect())
+    }
 }
 
 pub fn fit(
@@ -172,7 +179,11 @@ pub fn fit(
 
     for epoch in 1..iterations {
         let logits = model.forward(&x)?;
-        let log_sm = ops::log_softmax(&logits, D::Minus1)?;
+        // println!("Logit first: {:?}", logits.i((0..1, ..))?.p());
+        // let log_sm = ops::log_softmax(&logits, D::Minus1)?;
+        let log_sm = logits.log()?;  // softmax is done by the network, so only need log here.
+        // println!("log_sm first: {:?}", log_sm.i((0..1, ..))?.p());
+        // println!("y shape: {:?}", y.shape());
         let loss = loss::nll(&log_sm, &y)?;
         sgd.backward_step(&loss)?;
 
@@ -219,7 +230,7 @@ pub fn main() -> MainResult {
     let learning_rate = 0.1;
     let iterations = 1000;
     let batch_size = 64;
-    fit(&m.train_images,
+    let model = fit(&m.train_images,
         &m.train_labels,
         &m.test_images,
         &m.test_labels,
@@ -227,6 +238,15 @@ pub fn main() -> MainResult {
         learning_rate,
         iterations,
         batch_size)?;
+
+
+    let test_range = 0..100;
+    let digits = model.classify(&m.test_images.i((test_range.clone(), ..))?)?;
+    for (i, digit) in test_range.zip(digits.iter()) {
+        let this_image = m.test_images.get(i)?;
+        let this_image = util::mnist_image(&this_image)?;
+        this_image.save(format!("/tmp/image_{i}_d_{digit}.png"))?;
+    }
 
     Ok(())
 }
