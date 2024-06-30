@@ -101,6 +101,16 @@ impl LinearNetworkNetwork {
         Ok(xs)
     }
 
+    // Determine the ratio of correct answers.
+    fn predict(&self, x: &Tensor, y: &Tensor) -> anyhow::Result<f32> {
+        let a = self.forward(&x)?;
+        let y_hat = a.argmax(1)?;
+        // let y_real = y.argmax(1)?;
+        let y_real = y.to_dtype(DType::U32)?;
+        let same = y_hat.eq(&y_real)?.to_dtype(DType::F32)?;
+        let v = same.mean_all()?.to_scalar::<f32>()?;
+        Ok(v)
+    }
 
 }
 
@@ -124,24 +134,55 @@ pub fn fit(
     let y_test = y_test.to_device(&device)?;
 
 
-    let mini_batches = util::create_mini_batches(&x, &y, batch, &device)?;
-    let batch_len = mini_batches.len();
-    let mut batch_idxs = (0..batch_len).collect::<Vec<usize>>();
+    // let y = y.to_dtype(DType::F32)?;
+    // let y_test = y_test.to_dtype(DType::F32)?;
+    // let mini_batches = util::create_mini_batches(&x, &y, batch, &device)?;
+    // let batch_len = mini_batches.len();
+    // let mut batch_idxs = (0..batch_len).collect::<Vec<usize>>();
+
+    let convert_outputs = |v: &Tensor| -> Result<Tensor> {
+        let one = Tensor::full(1.0 as f32, (1, 1), &device)?;
+        let len = v.dims1()?;
+        let mut output = Tensor::full(0.0 as f32, (len, 10), &device)?;
+        for i in 0..len {
+            let d = y.get(i)?.to_scalar::<u8>()? as usize;
+            output = output.slice_assign(&[i..=i, d..=d], &one)?;
+        }
+        Ok(output)
+    };
+    // let y = convert_outputs(&y)?;
+    // let y_test = convert_outputs(&y_test)?;
+
+
 
     let mut varmap = VarMap::new();
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     let model = LinearNetworkNetwork::new(vs.clone(), layers, 28*28, device)?;
 
-
+    /*
     let adamw_params = candle_nn::ParamsAdamW {
         lr: learning_rate as f64,
         ..Default::default()
     };
     let mut opt = candle_nn::AdamW::new(varmap.all_vars(), adamw_params)?;
+    */
+
+    let mut sgd = candle_nn::SGD::new(varmap.all_vars(), learning_rate as f64)?;
 
 
     for epoch in 1..iterations {
-        
+        let logits = model.forward(&x)?;
+        let log_sm = ops::log_softmax(&logits, D::Minus1)?;
+        let loss = loss::nll(&log_sm, &y)?;
+        sgd.backward_step(&loss)?;
+
+
+        let test_accuracy = model.predict(&x_test, &y_test)?;
+        println!(
+            "{epoch:4} train loss: {:8.5} test acc: {:5.2}%",
+            loss.to_scalar::<f32>()?,
+            100. * test_accuracy
+        );
 
     }
     Ok(model)
@@ -176,7 +217,7 @@ pub fn main() -> MainResult {
     println!("r: {:?}", r.t()?.get(0)?.to_vec1::<f32>()?);
     
     let learning_rate = 0.1;
-    let iterations = 3;
+    let iterations = 1000;
     let batch_size = 64;
     fit(&m.train_images,
         &m.train_labels,
