@@ -169,30 +169,36 @@ pub fn fit(
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     let model = LinearNetworkNetwork::new(vs.clone(), &layers, 28*28, &device)?;
 
-    if false {
+    let mut mini_batches = util::create_mini_batches(&x, &y, batch, &device)?;
+    for (_, train_label) in mini_batches.iter_mut() {
+        *train_label = train_label.argmax(1)?;
+    }
+    let batch_len = mini_batches.len();
+
+    if true {
         let mut sgd = candle_nn::SGD::new(varmap.all_vars(), learning_rate as f64)?;
         for epoch in 1..iterations {
-            let logits = model.forward(&x)?;
-            let log_sm = logits.log()?;  // softmax is done by the network, so only need log here.
-            let loss = loss::nll(&log_sm, &y)?;
-            sgd.backward_step(&loss)?;
+
+            let mut sum_loss = 0f32;
+            for (train_img, train_label) in mini_batches.iter() {
+                let logits = model.forward_t(&train_img)?;
+                let log_sm = logits.log()?;  // softmax is done by the network, so only need log here.
+                let loss = loss::nll(&log_sm, &train_label)?;
+                sgd.backward_step(&loss)?;
+                sum_loss += loss.to_vec0::<f32>()?;
+            }
+            let avg_loss = sum_loss / batch_len as f32;
             let test_accuracy = model.predict(&x_test, &y_test)?;
             println!(
-                "{epoch:4} train loss: {:8.5} test acc: {:5.2}%",
-                loss.to_scalar::<f32>()?,
+                "{epoch:4} train loss {:8.5} test acc: {:5.2}%",
+                avg_loss,
                 100. * test_accuracy
             );
         }
     } else {
 
-        let mut mini_batches = util::create_mini_batches(&x, &y, batch, &device)?;
-        for (_, train_label) in mini_batches.iter_mut() {
-            *train_label = train_label.argmax(1)?;
-        }
         let y = y.to_dtype(DType::F32)?;
         let y_test = y_test.to_dtype(DType::F32)?;
-        let batch_len = mini_batches.len();
-        let mut batch_idxs = (0..batch_len).collect::<Vec<usize>>();
 
 
         let adamw_params = candle_nn::ParamsAdamW {
