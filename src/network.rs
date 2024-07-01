@@ -253,7 +253,7 @@ pub fn main() -> MainResult {
     // let r = ann.step_forward(&m.train_images.i((0..64, ..))?)?;
     println!("r: {:?}", r.t()?.get(0)?.to_vec1::<f32>()?);
     
-    let learning_rate = 0.1;
+    let learning_rate = 0.01;
     let iterations = 20;
     let batch_size = 64;
     let model = fit(&m.train_images,
