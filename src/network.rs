@@ -27,16 +27,56 @@ impl Module for SoftmaxLayer {
     }
 }
 
+pub struct ToImageLayer {}
+impl Module for ToImageLayer {
+    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
+        let (b_sz, _img_dim) = xs.dims2()?;
+        xs.reshape((b_sz, 1, 28, 28))
+    }
+}
 
-pub struct LinearNetworkNetwork {
+pub struct MaxPoolLayer {
+  pub dim: usize
+}
+impl Module for MaxPoolLayer {
+    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
+        xs.max_pool2d(self.dim)
+    }
+}
+
+
+
+pub struct FlattenLayer {
+  pub dim: usize
+}
+impl Module for FlattenLayer {
+    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
+        xs.flatten_from(self.dim)
+    }
+}
+
+
+
+
+pub struct SequentialNetwork {
     network: Sequential,
     device: Device,
 }
 
 
-impl LinearNetworkNetwork {
+impl SequentialNetwork {
     fn create_network(vs: VarBuilder, sizes: &[usize], device: &Device) -> Result<Sequential> {
         let mut network = seq();
+
+        let mut sizes = sizes.to_vec();
+        sizes[0] = 1024;
+        network = network.add(ToImageLayer{});
+        network = network.add(candle_nn::conv2d(1, 32, 5, Default::default(), vs.pp("c1"))?);
+        network = network.add(MaxPoolLayer{dim: 2});
+        network = network.add(candle_nn::conv2d(32, 64, 5, Default::default(), vs.pp("c2"))?);
+        network = network.add(MaxPoolLayer{dim: 2});
+        network = network.add(FlattenLayer{dim: 1});
+
         for l in 1..sizes.len() {
             let layer = candle_nn::linear(sizes[l-1], sizes[l], vs.pp(format!("fc{l}")))?;
             if (l == 1) {
@@ -88,11 +128,12 @@ impl LinearNetworkNetwork {
 
         let network = Self::create_network(vs, &layers_sizes, device)?;
 
-        Ok(LinearNetworkNetwork { network, device: device.clone() })
+        Ok(SequentialNetwork { network, device: device.clone() })
     }
 
     pub fn forward(&self, input: &Tensor) -> Result<Tensor> {
-        let z = self.network.forward(input)?;
+        let input = input.to_device(&self.device)?;
+        let z = self.network.forward(&input)?;
         Ok(z)
     }
 
@@ -129,6 +170,12 @@ impl LinearNetworkNetwork {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum TrainingOptimizer {
+    SGD,
+    AdamW,
+}
+
 pub fn fit(
     x: &Tensor,
     y: &Tensor,
@@ -138,7 +185,8 @@ pub fn fit(
     learning_rate: f32,
     iterations: usize,
     batch: usize,
-) -> anyhow::Result<LinearNetworkNetwork> {
+    optimizer: TrainingOptimizer,
+) -> anyhow::Result<SequentialNetwork> {
     use candle_core::D;
     use candle_nn::loss;
     use candle_nn::ops;
@@ -165,9 +213,9 @@ pub fn fit(
     let mut layers = layers.to_vec();
     let mut varmap = VarMap::new();
     layers.insert(0, 28*28);
-    LinearNetworkNetwork::load_default(&varmap, &layers, &device)?;
+    // SequentialNetwork::load_default(&varmap, &layers, &device)?;
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    let model = LinearNetworkNetwork::new(vs.clone(), &layers, 28*28, &device)?;
+    let model = SequentialNetwork::new(vs.clone(), &layers, 28*28, &device)?;
 
     let mut mini_batches = util::create_mini_batches(&x, &y, batch, &device)?;
     for (_, train_label) in mini_batches.iter_mut() {
@@ -175,7 +223,7 @@ pub fn fit(
     }
     let batch_len = mini_batches.len();
 
-    if true {
+    if optimizer == TrainingOptimizer::SGD {
         let mut sgd = candle_nn::SGD::new(varmap.all_vars(), learning_rate as f64)?;
         for epoch in 1..iterations {
 
@@ -247,20 +295,20 @@ pub fn main() -> MainResult {
     let img_0 = util::mnist_image(&train_0)?;
     img_0.save("/tmp/image_0.png")?;
 
-    let device = Device::Cpu;
-    // let device = Device::new_cuda(0)?;
+    // let device = Device::Cpu;
+    let device = Device::new_cuda(0)?;
 
     let mut varmap = VarMap::new();
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    let mut ann = LinearNetworkNetwork::new(vs, &[28*28, 10, 10], 28 * 28, &device)?;
+    let mut ann = SequentialNetwork::new(vs, &[28*28, 10, 10], 28 * 28, &device)?;
 
     // let mut t = vec![];
     let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
     // let r = ann.step_forward(&m.train_images.i((0..64, ..))?)?;
     println!("r: {:?}", r.t()?.get(0)?.to_vec1::<f32>()?);
     
-    let learning_rate = 0.01;
-    let iterations = 20;
+    let learning_rate = 0.001;
+    let iterations = 2000;
     let batch_size = 64;
     let model = fit(&m.train_images,
         &m.train_labels,
@@ -269,7 +317,10 @@ pub fn main() -> MainResult {
         &[10, 10],
         learning_rate,
         iterations,
-        batch_size)?;
+        batch_size,
+        // TrainingOptimizer::SGD,
+        TrainingOptimizer::AdamW,
+        )?;
 
 
     let test_range = 0..100;
