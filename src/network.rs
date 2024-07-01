@@ -1,7 +1,7 @@
 // use candle_nn::sequential::seq;
 // use candle_core::IndexOp;
 use candle_core::IndexOp;
-use candle_core::{DType, Device, Module, Result, Tensor, Shape, Var};
+use candle_core::{DType, Device, Module, Result, Tensor, Shape, Var, ModuleT};
 use candle_nn::{linear, seq, Linear, Sequential, Activation};
 use candle_nn::{VarBuilder, VarMap};
 use candle_nn::ops::softmax;
@@ -80,19 +80,24 @@ impl LinearNetworkNetwork {
         Ok(())
     }
 
-    pub fn new(vs: VarBuilder, layers_size: &[usize], input_size: usize, device: Device) -> Result<Self> {
+    pub fn new(vs: VarBuilder, layers_size: &[usize], input_size: usize, device: &Device) -> Result<Self> {
         let mut layers_sizes = layers_size.to_vec();
 
         // First layer is input_size long.
         // layers_sizes.insert(0, input_size);
 
-        let network = Self::create_network(vs, &layers_sizes, &device)?;
+        let network = Self::create_network(vs, &layers_sizes, device)?;
 
-        Ok(LinearNetworkNetwork { network, device })
+        Ok(LinearNetworkNetwork { network, device: device.clone() })
     }
 
     pub fn forward(&self, input: &Tensor) -> Result<Tensor> {
         let z = self.network.forward(input)?;
+        Ok(z)
+    }
+
+    pub fn forward_t(&self, input: &Tensor) -> Result<Tensor> {
+        let z = self.network.forward_t(input, true)?;
         Ok(z)
     }
 
@@ -144,11 +149,6 @@ pub fn fit(
     let y_test = y_test.to_device(&device)?;
 
 
-    // let y = y.to_dtype(DType::F32)?;
-    // let y_test = y_test.to_dtype(DType::F32)?;
-    // let mini_batches = util::create_mini_batches(&x, &y, batch, &device)?;
-    // let batch_len = mini_batches.len();
-    // let mut batch_idxs = (0..batch_len).collect::<Vec<usize>>();
 
     let convert_outputs = |v: &Tensor| -> Result<Tensor> {
         let one = Tensor::full(1.0 as f32, (1, 1), &device)?;
@@ -160,8 +160,6 @@ pub fn fit(
         }
         Ok(output)
     };
-    // let y = convert_outputs(&y)?;
-    // let y_test = convert_outputs(&y_test)?;
 
 
     let mut layers = layers.to_vec();
@@ -169,30 +167,59 @@ pub fn fit(
     layers.insert(0, 28*28);
     LinearNetworkNetwork::load_default(&varmap, &layers, &device)?;
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    let model = LinearNetworkNetwork::new(vs.clone(), &layers, 28*28, device)?;
+    let model = LinearNetworkNetwork::new(vs.clone(), &layers, 28*28, &device)?;
 
-    /*
-    let adamw_params = candle_nn::ParamsAdamW {
-        lr: learning_rate as f64,
-        ..Default::default()
-    };
-    let mut opt = candle_nn::AdamW::new(varmap.all_vars(), adamw_params)?;
-    */
+    if false {
+        let mut sgd = candle_nn::SGD::new(varmap.all_vars(), learning_rate as f64)?;
+        for epoch in 1..iterations {
+            let logits = model.forward(&x)?;
+            let log_sm = logits.log()?;  // softmax is done by the network, so only need log here.
+            let loss = loss::nll(&log_sm, &y)?;
+            sgd.backward_step(&loss)?;
+            let test_accuracy = model.predict(&x_test, &y_test)?;
+            println!(
+                "{epoch:4} train loss: {:8.5} test acc: {:5.2}%",
+                loss.to_scalar::<f32>()?,
+                100. * test_accuracy
+            );
+        }
+    } else {
 
-    let mut sgd = candle_nn::SGD::new(varmap.all_vars(), learning_rate as f64)?;
+        let mut mini_batches = util::create_mini_batches(&x, &y, batch, &device)?;
+        for (_, train_label) in mini_batches.iter_mut() {
+            *train_label = train_label.argmax(1)?;
+        }
+        let y = y.to_dtype(DType::F32)?;
+        let y_test = y_test.to_dtype(DType::F32)?;
+        let batch_len = mini_batches.len();
+        let mut batch_idxs = (0..batch_len).collect::<Vec<usize>>();
 
 
-    for epoch in 1..iterations {
-        let logits = model.forward(&x)?;
-        let log_sm = logits.log()?;  // softmax is done by the network, so only need log here.
-        let loss = loss::nll(&log_sm, &y)?;
-        sgd.backward_step(&loss)?;
-        let test_accuracy = model.predict(&x_test, &y_test)?;
-        println!(
-            "{epoch:4} train loss: {:8.5} test acc: {:5.2}%",
-            loss.to_scalar::<f32>()?,
-            100. * test_accuracy
-        );
+        let adamw_params = candle_nn::ParamsAdamW {
+            lr: learning_rate as f64,
+            ..Default::default()
+        };
+        let mut opt = candle_nn::AdamW::new(varmap.all_vars(), adamw_params)?;
+
+
+        for epoch in 1..iterations {
+            let mut sum_loss = 0f32;
+            for (train_img, train_label) in mini_batches.iter() {
+                let logits = model.forward_t(&train_img)?;
+                let log_sm = logits.log()?;  // softmax is done by the network, so only need log here.
+                let loss = loss::nll(&log_sm, &train_label)?;
+                opt.backward_step(&loss)?;
+                sum_loss += loss.to_vec0::<f32>()?;
+            }
+            let avg_loss = sum_loss / batch_len as f32;
+
+            let test_accuracy = model.predict(&x_test, &y_test)?;
+            println!(
+                "{epoch:4} train loss {:8.5} test acc: {:5.2}%",
+                avg_loss,
+                100. * test_accuracy
+            );
+        }
 
     }
     Ok(model)
@@ -219,7 +246,7 @@ pub fn main() -> MainResult {
 
     let mut varmap = VarMap::new();
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    let mut ann = LinearNetworkNetwork::new(vs, &[28*28, 10, 10], 28 * 28, device)?;
+    let mut ann = LinearNetworkNetwork::new(vs, &[28*28, 10, 10], 28 * 28, &device)?;
 
     // let mut t = vec![];
     let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
@@ -227,7 +254,7 @@ pub fn main() -> MainResult {
     println!("r: {:?}", r.t()?.get(0)?.to_vec1::<f32>()?);
     
     let learning_rate = 0.1;
-    let iterations = 1000;
+    let iterations = 20;
     let batch_size = 64;
     let model = fit(&m.train_images,
         &m.train_labels,

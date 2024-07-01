@@ -35,10 +35,14 @@ pub fn create_mini_batches(
             output = output.slice_assign(&[k..=k, d..=d], &one)?;
         }
         mini.push((input, output));
+        if batch_count >= 10 {
+            // break
+        }
     }
 
     Ok(mini)
 }
+
 
 pub fn mnist_image(v: &Tensor) -> anyhow::Result<image::GrayImage> {
     // image is 28x28, input tensor is 1x784.
