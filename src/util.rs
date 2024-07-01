@@ -36,7 +36,7 @@ pub fn create_mini_batches(
         }
         mini.push((input, output));
         if batch_count >= 10 {
-            break
+            // break
         }
     }
 

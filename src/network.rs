@@ -55,13 +55,21 @@ impl Module for FlattenLayer {
     }
 }
 
-
-
-
 pub struct SequentialNetwork {
     network: Sequential,
     device: Device,
 }
+
+pub struct DropoutLayer {
+    dropout: candle_nn::Dropout,
+    linear: Linear,
+}
+impl Module for DropoutLayer {
+    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
+        self.dropout.forward(&xs, false)?.apply(&self.linear)
+    }
+}
+
 
 
 impl SequentialNetwork {
@@ -69,13 +77,13 @@ impl SequentialNetwork {
         let mut network = seq();
 
         let mut sizes = sizes.to_vec();
-        sizes[0] = 1024;
-        network = network.add(ToImageLayer{});
-        network = network.add(candle_nn::conv2d(1, 32, 5, Default::default(), vs.pp("c1"))?);
-        network = network.add(MaxPoolLayer{dim: 2});
-        network = network.add(candle_nn::conv2d(32, 64, 5, Default::default(), vs.pp("c2"))?);
-        network = network.add(MaxPoolLayer{dim: 2});
-        network = network.add(FlattenLayer{dim: 1});
+        // sizes[0] = 1024;
+        // network = network.add(ToImageLayer{});
+        // network = network.add(candle_nn::conv2d(1, 32, 5, Default::default(), vs.pp("c1"))?);
+        // network = network.add(MaxPoolLayer{dim: 2});
+        // network = network.add(candle_nn::conv2d(32, 64, 5, Default::default(), vs.pp("c2"))?);
+        // network = network.add(MaxPoolLayer{dim: 2});
+        // network = network.add(FlattenLayer{dim: 1});
 
         for l in 1..sizes.len() {
             let layer = candle_nn::linear(sizes[l-1], sizes[l], vs.pp(format!("fc{l}")))?;
@@ -307,8 +315,8 @@ pub fn main() -> MainResult {
     // let r = ann.step_forward(&m.train_images.i((0..64, ..))?)?;
     println!("r: {:?}", r.t()?.get(0)?.to_vec1::<f32>()?);
     
-    let learning_rate = 0.001;
-    let iterations = 2000;
+    let learning_rate = 0.01;
+    let iterations = 20;
     let batch_size = 64;
     let model = fit(&m.train_images,
         &m.train_labels,
