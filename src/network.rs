@@ -77,16 +77,23 @@ impl SequentialNetwork {
         let mut network = seq();
 
         let mut sizes = config.linear_layers.clone();
-        sizes.insert(0, 28 * 28);
 
-        let mut sizes = sizes.to_vec();
-        // sizes[0] = 1024;
-        // network = network.add(ToImageLayer{});
-        // network = network.add(candle_nn::conv2d(1, 32, 5, Default::default(), vs.pp("c1"))?);
-        // network = network.add(MaxPoolLayer{dim: 2});
-        // network = network.add(candle_nn::conv2d(32, 64, 5, Default::default(), vs.pp("c2"))?);
-        // network = network.add(MaxPoolLayer{dim: 2});
-        // network = network.add(FlattenLayer{dim: 1});
+        if (config.convolution_layers.is_empty()) {
+            sizes.insert(0, 28 * 28);
+        } else {
+            sizes.insert(0, 1024);
+            network = network.add(ToImageLayer{});
+            for l in 0..config.convolution_layers.len() {
+                let (in_channels, out_channels, kernel) = config.convolution_layers[l];
+                network = network.add(candle_nn::conv2d(in_channels, out_channels, kernel, Default::default(), vs.pp(format!("c{l}")))?);
+                network = network.add(MaxPoolLayer{dim: 2});
+            }
+            // network = network.add(candle_nn::conv2d(1, 32, 5, Default::default(), vs.pp("c1"))?);
+            // network = network.add(MaxPoolLayer{dim: 2});
+            // network = network.add(candle_nn::conv2d(32, 64, 5, Default::default(), vs.pp("c2"))?);
+            // network = network.add(MaxPoolLayer{dim: 2});
+            network = network.add(FlattenLayer{dim: 1});
+        }
 
         for l in 1..sizes.len() {
             let layer = candle_nn::linear(sizes[l-1], sizes[l], vs.pp(format!("fc{l}")))?;
@@ -321,7 +328,6 @@ pub fn main() -> MainResult {
     // let mut varmap = VarMap::new();
     // let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     // let mut ann = SequentialNetwork::new(vs, &[28*28, 10, 10], 28 * 28, &device)?;
-
     // let mut t = vec![];
     // let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
     // let r = ann.step_forward(&m.train_images.i((0..64, ..))?)?;
@@ -336,16 +342,24 @@ pub fn main() -> MainResult {
         batch_size: 64,
     };
 
+    let convolution_config = Config {
+        convolution_layers: vec![(1, 32, 5), (32, 64, 5)],
+        linear_layers: vec![1024, 10],
+        optimizer: TrainingOptimizer::AdamW,
+        learning_rate: 0.01,
+        iterations: 20,
+        batch_size: 64,
 
-    let learning_rate = 0.01;
-    let iterations = 20;
-    let batch_size = 64;
+    };
+
+
+    let config_used = convolution_config;
+
     let model = fit(&m.train_images,
         &m.train_labels,
         &m.test_images,
         &m.test_labels,
-        // &[10, 10],
-        linear_config
+        config_used
         )?;
 
 
