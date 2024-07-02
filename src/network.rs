@@ -184,16 +184,26 @@ pub enum TrainingOptimizer {
     AdamW,
 }
 
+
+
+#[derive(Debug, Clone)]
+struct Config {
+    convolution_layers: Vec<(usize, usize, usize)>,
+    linear_layers: Vec<usize>,
+
+    optimizer: TrainingOptimizer,
+    learning_rate: f64,
+    iterations: usize,
+    batch_size: usize,
+}
+
 pub fn fit(
     x: &Tensor,
     y: &Tensor,
     x_test: &Tensor,
     y_test: &Tensor,
     layers: &[usize],
-    learning_rate: f32,
-    iterations: usize,
-    batch: usize,
-    optimizer: TrainingOptimizer,
+    config: Config,
 ) -> anyhow::Result<SequentialNetwork> {
     use candle_core::D;
     use candle_nn::loss;
@@ -225,15 +235,15 @@ pub fn fit(
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     let model = SequentialNetwork::new(vs.clone(), &layers, 28*28, &device)?;
 
-    let mut mini_batches = util::create_mini_batches(&x, &y, batch, &device)?;
+    let mut mini_batches = util::create_mini_batches(&x, &y, config.batch_size, &device)?;
     for (_, train_label) in mini_batches.iter_mut() {
         *train_label = train_label.argmax(1)?;
     }
     let batch_len = mini_batches.len();
 
-    if optimizer == TrainingOptimizer::SGD {
-        let mut sgd = candle_nn::SGD::new(varmap.all_vars(), learning_rate as f64)?;
-        for epoch in 1..iterations {
+    if config.optimizer == TrainingOptimizer::SGD {
+        let mut sgd = candle_nn::SGD::new(varmap.all_vars(), config.learning_rate)?;
+        for epoch in 1..config.iterations {
 
             let mut sum_loss = 0f32;
             for (train_img, train_label) in mini_batches.iter() {
@@ -258,13 +268,13 @@ pub fn fit(
 
 
         let adamw_params = candle_nn::ParamsAdamW {
-            lr: learning_rate as f64,
+            lr: config.learning_rate as f64,
             ..Default::default()
         };
         let mut opt = candle_nn::AdamW::new(varmap.all_vars(), adamw_params)?;
 
 
-        for epoch in 1..iterations {
+        for epoch in 1..config.iterations {
             let mut sum_loss = 0f32;
             for (train_img, train_label) in mini_batches.iter() {
                 let logits = model.forward_t(&train_img)?;
@@ -315,6 +325,16 @@ pub fn main() -> MainResult {
     // let r = ann.step_forward(&m.train_images.i((0..64, ..))?)?;
     println!("r: {:?}", r.t()?.get(0)?.to_vec1::<f32>()?);
     
+    let linear_config = Config{
+        convolution_layers: vec![],
+        linear_layers: vec![10, 10],
+        optimizer: TrainingOptimizer::SGD,
+        learning_rate: 0.01,
+        iterations: 20,
+        batch_size: 64,
+    };
+
+
     let learning_rate = 0.01;
     let iterations = 20;
     let batch_size = 64;
@@ -323,11 +343,7 @@ pub fn main() -> MainResult {
         &m.test_images,
         &m.test_labels,
         &[10, 10],
-        learning_rate,
-        iterations,
-        batch_size,
-        // TrainingOptimizer::SGD,
-        TrainingOptimizer::AdamW,
+        linear_config
         )?;
 
 
