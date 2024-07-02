@@ -1,8 +1,8 @@
 // use candle_nn::sequential::seq;
 // use candle_core::IndexOp;
 use candle_core::IndexOp;
-use candle_core::{DType, Device, Module, Result, Tensor, Shape, Var, ModuleT};
-use candle_nn::{linear, seq, Linear, Sequential, Activation};
+use candle_core::{DType, Device, Module, Result, Tensor, Var, ModuleT};
+use candle_nn::{seq, Sequential, Activation};
 use candle_nn::{VarBuilder, VarMap};
 use candle_nn::ops::softmax;
 use candle_nn::Optimizer;
@@ -10,6 +10,7 @@ use candle_nn::Optimizer;
 use crate::candle_util::prelude::*;
 use crate::util;
 use rand::prelude::*;
+use rand_xorshift::XorShiftRng;
 
 pub struct SoftmaxLayer {
   pub dim: usize
@@ -62,23 +63,22 @@ pub struct SequentialNetwork {
 
 pub struct DropoutLayer {
     dropout: candle_nn::Dropout,
-    linear: Linear,
 }
 impl Module for DropoutLayer {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        self.dropout.forward(&xs, false)?.apply(&self.linear)
+        self.dropout.forward(&xs, false)
     }
 }
 
 
 
 impl SequentialNetwork {
-    fn create_network(vs: VarBuilder, config: &Config, device: &Device) -> Result<Sequential> {
+    fn create_network(vs: VarBuilder, config: &Config) -> Result<Sequential> {
         let mut network = seq();
 
         let mut sizes = config.linear_layers.clone();
 
-        if (config.convolution_layers.is_empty()) {
+        if config.convolution_layers.is_empty() {
             sizes.insert(0, 28 * 28);
         } else {
             sizes.insert(0, 1024);
@@ -97,10 +97,13 @@ impl SequentialNetwork {
 
         for l in 1..sizes.len() {
             let layer = candle_nn::linear(sizes[l-1], sizes[l], vs.pp(format!("fc{l}")))?;
-            if (l == 1) {
+            if l == 1 {
                 // println!("w: {:?}", layer.weight().p());
             }
             network = network.add(layer);
+            if l == 1 && !config.convolution_layers.is_empty() {
+                network = network.add(DropoutLayer{dropout: candle_nn::Dropout::new(0.5)});
+            }
             // Add sigmoid on all but the last layer.
             if l != (sizes.len() - 1) {
                 network = network.add(Activation::Sigmoid);
@@ -111,8 +114,6 @@ impl SequentialNetwork {
     }
 
     pub fn load_default(vm: &VarMap, sizes: &[usize], device: &Device) -> Result<()> {
-        use rand::prelude::*;
-        use rand_xorshift::XorShiftRng;
         let mut rng = XorShiftRng::seed_from_u64(1);
         for l in 1..sizes.len() {
             let w_size = sizes[l] * sizes[l - 1];
@@ -125,7 +126,7 @@ impl SequentialNetwork {
             let w = w.div(&Tensor::full(d, (sizes[l], sizes[l - 1]), device)?)?;
             let b = Tensor::full(0f32, (sizes[l],), device)?;
 
-            if (l == 1) {
+            if l == 1 {
                 // println!("w: {:?}", w.p());
             }
             let z = vm.data();
@@ -138,13 +139,13 @@ impl SequentialNetwork {
         Ok(())
     }
 
-    pub fn new(vs: VarBuilder, config: &Config, input_size: usize, device: &Device) -> Result<Self> {
+    pub fn new(vs: VarBuilder, config: &Config, device: &Device) -> Result<Self> {
         // let mut layers_sizes = layers_size.to_vec();
 
         // First layer is input_size long.
         // layers_sizes.insert(0, input_size);
 
-        let network = Self::create_network(vs, config, device)?;
+        let network = Self::create_network(vs, config)?;
 
         Ok(SequentialNetwork { network, device: device.clone() })
     }
@@ -214,9 +215,7 @@ pub fn fit(
     y_test: &Tensor,
     config: Config,
 ) -> anyhow::Result<SequentialNetwork> {
-    use candle_core::D;
     use candle_nn::loss;
-    use candle_nn::ops;
     let device = Device::cuda_if_available(0)?;
     let x = x.to_device(&device)?;
     let y = y.to_device(&device)?;
@@ -224,25 +223,12 @@ pub fn fit(
     let y_test = y_test.to_device(&device)?;
 
 
-
-    let convert_outputs = |v: &Tensor| -> Result<Tensor> {
-        let one = Tensor::full(1.0 as f32, (1, 1), &device)?;
-        let len = v.dims1()?;
-        let mut output = Tensor::full(0.0 as f32, (len, 10), &device)?;
-        for i in 0..len {
-            let d = y.get(i)?.to_scalar::<u8>()? as usize;
-            output = output.slice_assign(&[i..=i, d..=d], &one)?;
-        }
-        Ok(output)
-    };
-
-
     // let mut layers = layers.to_vec();
-    let mut varmap = VarMap::new();
+    let varmap = VarMap::new();
     // layers.insert(0, 28*28);
     // SequentialNetwork::load_default(&varmap, &layers, &device)?;
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    let model = SequentialNetwork::new(vs.clone(), &config, 28*28, &device)?;
+    let model = SequentialNetwork::new(vs.clone(), &config, &device)?;
 
     let mut mini_batches = util::create_mini_batches(&x, &y, config.batch_size, &device)?;
     for (_, train_label) in mini_batches.iter_mut() {
@@ -250,12 +236,20 @@ pub fn fit(
     }
     let batch_len = mini_batches.len();
 
+
+    use rand::prelude::*;
+    use rand_xorshift::XorShiftRng;
+    let mut rng = XorShiftRng::seed_from_u64(1);
+    let mut shuffled_indices: Vec<usize> = (0..batch_len).collect();
+
     if config.optimizer == TrainingOptimizer::SGD {
         let mut sgd = candle_nn::SGD::new(varmap.all_vars(), config.learning_rate)?;
         for epoch in 1..config.iterations {
+            shuffled_indices.shuffle(&mut rng);
 
             let mut sum_loss = 0f32;
-            for (train_img, train_label) in mini_batches.iter() {
+            for idx in shuffled_indices.iter() {
+                let (train_img, train_label) = &mini_batches[*idx];
                 let logits = model.forward_t(&train_img)?;
                 let log_sm = logits.log()?;  // softmax is done by the network, so only need log here.
                 let loss = loss::nll(&log_sm, &train_label)?;
@@ -272,8 +266,8 @@ pub fn fit(
         }
     } else {
 
-        let y = y.to_dtype(DType::F32)?;
-        let y_test = y_test.to_dtype(DType::F32)?;
+        // let y = y.to_dtype(DType::F32)?;
+        // let y_test = y_test.to_dtype(DType::F32)?;
 
 
         let adamw_params = candle_nn::ParamsAdamW {
@@ -284,8 +278,11 @@ pub fn fit(
 
 
         for epoch in 1..config.iterations {
+            shuffled_indices.shuffle(&mut rng);
+
             let mut sum_loss = 0f32;
-            for (train_img, train_label) in mini_batches.iter() {
+            for idx in shuffled_indices.iter() {
+                let (train_img, train_label) = &mini_batches[*idx];
                 let logits = model.forward_t(&train_img)?;
                 let log_sm = logits.log()?;  // softmax is done by the network, so only need log here.
                 let loss = loss::nll(&log_sm, &train_label)?;
@@ -322,8 +319,8 @@ pub fn main() -> MainResult {
     let img_0 = util::mnist_image(&train_0)?;
     img_0.save("/tmp/image_0.png")?;
 
-    // let device = Device::Cpu;
-    let device = Device::new_cuda(0)?;
+    let device = Device::Cpu;
+    // let device = Device::new_cuda(0)?;
 
     // let mut varmap = VarMap::new();
     // let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
@@ -344,15 +341,16 @@ pub fn main() -> MainResult {
 
     let convolution_config = Config {
         convolution_layers: vec![(1, 32, 5), (32, 64, 5)],
+        // Don't have a drop out layer, what does a drop out layer do??
         linear_layers: vec![1024, 10],
         optimizer: TrainingOptimizer::AdamW,
-        learning_rate: 0.01,
-        iterations: 20,
+        learning_rate: 0.001,
+        iterations: 200,
         batch_size: 64,
-
     };
 
 
+    // let config_used = linear_config;
     let config_used = convolution_config;
 
     let model = fit(&m.train_images,

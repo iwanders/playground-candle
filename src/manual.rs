@@ -2,7 +2,6 @@ use crate::util;
 use candle_core::IndexOp;
 use candle_core::{DType, Device, Tensor};
 use candle_nn::ops::softmax;
-use crate::candle_util::prelude::*;
 
 // Solving mnist fully connected linear layers.
 
