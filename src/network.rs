@@ -107,6 +107,7 @@ impl SequentialNetwork {
             // Add sigmoid on all but the last layer.
             if l != (sizes.len() - 1) {
                 network = network.add(Activation::Sigmoid);
+                // network = network.add(Activation::Relu);
             }
         }
         network = network.add(SoftmaxLayer::new(1));
