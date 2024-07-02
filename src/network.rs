@@ -73,8 +73,11 @@ impl Module for DropoutLayer {
 
 
 impl SequentialNetwork {
-    fn create_network(vs: VarBuilder, sizes: &[usize], device: &Device) -> Result<Sequential> {
+    fn create_network(vs: VarBuilder, config: &Config, device: &Device) -> Result<Sequential> {
         let mut network = seq();
+
+        let mut sizes = config.linear_layers.clone();
+        sizes.insert(0, 28 * 28);
 
         let mut sizes = sizes.to_vec();
         // sizes[0] = 1024;
@@ -128,13 +131,13 @@ impl SequentialNetwork {
         Ok(())
     }
 
-    pub fn new(vs: VarBuilder, layers_size: &[usize], input_size: usize, device: &Device) -> Result<Self> {
-        let mut layers_sizes = layers_size.to_vec();
+    pub fn new(vs: VarBuilder, config: &Config, input_size: usize, device: &Device) -> Result<Self> {
+        // let mut layers_sizes = layers_size.to_vec();
 
         // First layer is input_size long.
         // layers_sizes.insert(0, input_size);
 
-        let network = Self::create_network(vs, &layers_sizes, device)?;
+        let network = Self::create_network(vs, config, device)?;
 
         Ok(SequentialNetwork { network, device: device.clone() })
     }
@@ -187,14 +190,14 @@ pub enum TrainingOptimizer {
 
 
 #[derive(Debug, Clone)]
-struct Config {
-    convolution_layers: Vec<(usize, usize, usize)>,
-    linear_layers: Vec<usize>,
+pub struct Config {
+    pub convolution_layers: Vec<(usize, usize, usize)>,
+    pub linear_layers: Vec<usize>,
 
-    optimizer: TrainingOptimizer,
-    learning_rate: f64,
-    iterations: usize,
-    batch_size: usize,
+    pub optimizer: TrainingOptimizer,
+    pub learning_rate: f64,
+    pub iterations: usize,
+    pub batch_size: usize,
 }
 
 pub fn fit(
@@ -202,7 +205,6 @@ pub fn fit(
     y: &Tensor,
     x_test: &Tensor,
     y_test: &Tensor,
-    layers: &[usize],
     config: Config,
 ) -> anyhow::Result<SequentialNetwork> {
     use candle_core::D;
@@ -228,12 +230,12 @@ pub fn fit(
     };
 
 
-    let mut layers = layers.to_vec();
+    // let mut layers = layers.to_vec();
     let mut varmap = VarMap::new();
-    layers.insert(0, 28*28);
+    // layers.insert(0, 28*28);
     // SequentialNetwork::load_default(&varmap, &layers, &device)?;
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    let model = SequentialNetwork::new(vs.clone(), &layers, 28*28, &device)?;
+    let model = SequentialNetwork::new(vs.clone(), &config, 28*28, &device)?;
 
     let mut mini_batches = util::create_mini_batches(&x, &y, config.batch_size, &device)?;
     for (_, train_label) in mini_batches.iter_mut() {
@@ -316,14 +318,14 @@ pub fn main() -> MainResult {
     // let device = Device::Cpu;
     let device = Device::new_cuda(0)?;
 
-    let mut varmap = VarMap::new();
-    let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    let mut ann = SequentialNetwork::new(vs, &[28*28, 10, 10], 28 * 28, &device)?;
+    // let mut varmap = VarMap::new();
+    // let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+    // let mut ann = SequentialNetwork::new(vs, &[28*28, 10, 10], 28 * 28, &device)?;
 
     // let mut t = vec![];
-    let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
+    // let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
     // let r = ann.step_forward(&m.train_images.i((0..64, ..))?)?;
-    println!("r: {:?}", r.t()?.get(0)?.to_vec1::<f32>()?);
+    // println!("r: {:?}", r.t()?.get(0)?.to_vec1::<f32>()?);
     
     let linear_config = Config{
         convolution_layers: vec![],
@@ -342,7 +344,7 @@ pub fn main() -> MainResult {
         &m.train_labels,
         &m.test_images,
         &m.test_labels,
-        &[10, 10],
+        // &[10, 10],
         linear_config
         )?;
 
