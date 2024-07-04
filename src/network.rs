@@ -87,6 +87,7 @@ impl SequentialNetwork {
             }
             network.add(SoftmaxLayer::new(1));
         } else {
+            // https://machinelearningmastery.com/how-to-develop-a-convolutional-neural-network-from-scratch-for-mnist-handwritten-digit-classification/
             if !config.linear_layers.is_empty(){
                 bail!("linear layers is not empty in convolution config");
             }
