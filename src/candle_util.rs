@@ -1,5 +1,5 @@
 // use candle_core::IndexOp;
-use candle_core::{Tensor, DType};
+use candle_core::{Tensor, DType, ModuleT};
 
 pub mod prelude {
     pub use super::PrintableTensorTrait;
@@ -61,7 +61,41 @@ impl<'a> std::fmt::Debug for PrintableTensor<'a> {
     }
 }
 
+/// A sequential struct that holds ModuleT instead of Module such that it can be used for training.
+pub struct SequentialT {
+    layers: Vec<Box<dyn ModuleT>>,
+}
 
+impl SequentialT {
+    pub fn new() -> Self {
+        Self {
+            layers: vec![],
+        }
+    }
+
+    pub fn add<T: ModuleT + 'static>(&mut self, v: T) {
+        self.layers.push(Box::new(v))
+    }
+
+    pub fn len(&self) -> usize {
+        self.layers.len()
+    }
+
+    pub fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
+        let mut xs = xs.clone();
+        for layer in self.layers.iter() {
+            xs = (**layer).forward_t(&xs, train)?
+        }
+        Ok(xs)
+    }
+    pub fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor> {
+        let mut xs = xs.clone();
+        for layer in self.layers.iter() {
+            xs = (**layer).forward_t(&xs, false)?
+        }
+        Ok(xs)
+    }
+}
 
 
 #[cfg(test)]

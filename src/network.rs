@@ -1,13 +1,14 @@
 // use candle_nn::sequential::seq;
 // use candle_core::IndexOp;
 use candle_core::IndexOp;
-use candle_core::{DType, Device, Module, Result, Tensor, Var, ModuleT};
+use candle_core::{DType, Device, Module, Result, Tensor, Var};
 use candle_nn::{seq, Sequential, Activation};
 use candle_nn::{VarBuilder, VarMap};
 use candle_nn::ops::softmax;
 use candle_nn::Optimizer;
 
 use crate::candle_util::prelude::*;
+use crate::candle_util::SequentialT;
 use crate::util;
 use rand::prelude::*;
 use rand_xorshift::XorShiftRng;
@@ -57,7 +58,7 @@ impl Module for FlattenLayer {
 }
 
 pub struct SequentialNetwork {
-    network: Sequential,
+    network: SequentialT,
     device: Device,
 }
 
@@ -73,8 +74,8 @@ impl Module for DropoutLayer {
 
 
 impl SequentialNetwork {
-    fn create_network(vs: VarBuilder, config: &Config) -> Result<Sequential> {
-        let mut network = seq();
+    fn create_network(vs: VarBuilder, config: &Config) -> Result<SequentialT> {
+        let mut network = SequentialT::new();
 
         let mut sizes = config.linear_layers.clone();
 
@@ -82,17 +83,17 @@ impl SequentialNetwork {
             sizes.insert(0, 28 * 28);
         } else {
             sizes.insert(0, 1024);
-            network = network.add(ToImageLayer{});
+            network.add(ToImageLayer{});
             for l in 0..config.convolution_layers.len() {
                 let (in_channels, out_channels, kernel) = config.convolution_layers[l];
-                network = network.add(candle_nn::conv2d(in_channels, out_channels, kernel, Default::default(), vs.pp(format!("c{l}")))?);
-                network = network.add(MaxPoolLayer{dim: 2});
+                network.add(candle_nn::conv2d(in_channels, out_channels, kernel, Default::default(), vs.pp(format!("c{l}")))?);
+                network.add(MaxPoolLayer{dim: 2});
             }
             // network = network.add(candle_nn::conv2d(1, 32, 5, Default::default(), vs.pp("c1"))?);
             // network = network.add(MaxPoolLayer{dim: 2});
             // network = network.add(candle_nn::conv2d(32, 64, 5, Default::default(), vs.pp("c2"))?);
             // network = network.add(MaxPoolLayer{dim: 2});
-            network = network.add(FlattenLayer{dim: 1});
+            network.add(FlattenLayer{dim: 1});
         }
 
         for l in 1..sizes.len() {
@@ -100,17 +101,17 @@ impl SequentialNetwork {
             if l == 1 {
                 // println!("w: {:?}", layer.weight().p());
             }
-            network = network.add(layer);
+            network.add(layer);
             if l == 1 && !config.convolution_layers.is_empty() {
-                network = network.add(DropoutLayer{dropout: candle_nn::Dropout::new(0.5)});
+                network.add(candle_nn::Dropout::new(0.5));
             }
             // Add sigmoid on all but the last layer.
             if l != (sizes.len() - 1) {
-                network = network.add(Activation::Sigmoid);
+                network.add(Activation::Sigmoid);
                 // network = network.add(Activation::Relu);
             }
         }
-        network = network.add(SoftmaxLayer::new(1));
+        network.add(SoftmaxLayer::new(1));
         Ok(network)
     }
 
@@ -162,14 +163,6 @@ impl SequentialNetwork {
         Ok(z)
     }
 
-    pub fn step_forward(&self, input: &Tensor) -> Result<Tensor> {
-        let mut xs = input.clone();
-        for i in 0..self.network.len() {
-            xs = self.network.layer(i).unwrap().forward(&xs)?;
-            println!("xs{i}: {:?}", xs.p());
-        }
-        Ok(xs)
-    }
 
     // Determine the ratio of correct answers.
     fn predict(&self, x: &Tensor, y: &Tensor) -> anyhow::Result<f32> {
@@ -351,8 +344,8 @@ pub fn main() -> MainResult {
     };
 
 
-    // let config_used = linear_config;
-    let config_used = convolution_config;
+    let config_used = linear_config;
+    // let config_used = convolution_config;
 
     let model = fit(&m.train_images,
         &m.train_labels,
