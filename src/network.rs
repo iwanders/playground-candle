@@ -2,13 +2,13 @@
 // use candle_core::IndexOp;
 use candle_core::IndexOp;
 use candle_core::{DType, Device, Module, Result, Tensor, Var, D};
-use candle_nn::{seq, Sequential, Activation, Dropout};
+use candle_nn::{Activation, Dropout};
 use candle_nn::{VarBuilder, VarMap};
 use candle_nn::ops::{log_softmax, softmax};
 use candle_nn::Optimizer;
 use candle_core::bail;
 
-use crate::candle_util::prelude::*;
+// use crate::candle_util::prelude::*;
 use crate::candle_util::SequentialT;
 use crate::util;
 use rand::prelude::*;
@@ -85,12 +85,12 @@ impl SequentialNetwork {
                     network.add(Activation::Sigmoid);
                 }
             }
-            network.add(SoftmaxLayer::new(1));
+            // network.add(SoftmaxLayer::new(1));
         } else {
-            // https://machinelearningmastery.com/how-to-develop-a-convolutional-neural-network-from-scratch-for-mnist-handwritten-digit-classification/
-            if !config.linear_layers.is_empty(){
-                bail!("linear layers is not empty in convolution config");
+            if config.linear_layers.len() != 2 {
+                bail!("linear layers must be two long in convolution config");
             }
+            // https://machinelearningmastery.com/how-to-develop-a-convolutional-neural-network-from-scratch-for-mnist-handwritten-digit-classification/
             network.add(ToImageLayer{});
             for l in 0..config.convolution_layers.len() {
                 let (in_channels, out_channels, kernel) = config.convolution_layers[l];
@@ -99,10 +99,10 @@ impl SequentialNetwork {
                 network.add(MaxPoolLayer{dim: 2});
             }
             network.add(FlattenLayer{dim: 1});
-            network.add(candle_nn::linear(5408, 100, vs.pp(format!("conv_fc0")))?);
+            network.add(candle_nn::linear(config.linear_layers[0], config.linear_layers[1], vs.pp(format!("conv_fc0")))?);
             network.add(Activation::Relu);
             network.add(Dropout::new(0.5));
-            network.add(candle_nn::linear(100, 10, vs.pp(format!("conv_fc1")))?);
+            network.add(candle_nn::linear(config.linear_layers[1], 10, vs.pp(format!("conv_fc1")))?);
         }
 
         Ok(network)
@@ -238,7 +238,7 @@ pub fn fit(
             for idx in shuffled_indices.iter() {
                 let (train_img, train_label) = &mini_batches[*idx];
                 let logits = model.forward_t(&train_img)?;
-                let log_sm = logits.log()?;  // softmax is done by the network, so only need log here.
+                let log_sm = log_softmax(&logits, D::Minus1)?;
                 let loss = loss::nll(&log_sm, &train_label)?;
                 sgd.backward_step(&loss)?;
                 sum_loss += loss.to_vec0::<f32>()?;
@@ -252,9 +252,6 @@ pub fn fit(
             );
         }
     } else {
-
-        // let y = y.to_dtype(DType::F32)?;
-        // let y_test = y_test.to_dtype(DType::F32)?;
 
 
         let adamw_params = candle_nn::ParamsAdamW {
@@ -329,10 +326,10 @@ pub fn main() -> MainResult {
     let convolution_config = Config {
         // let (in_channels, out_channels, kernel) = config.convolution_layers[l];
         convolution_layers: vec![(1, 32, 3)],
-        linear_layers: vec![],
+        linear_layers: vec![5408, 1000],
         optimizer: TrainingOptimizer::AdamW,
         learning_rate: 0.001,
-        iterations: 200,
+        iterations: 20,
         batch_size: 64,
     };
 
