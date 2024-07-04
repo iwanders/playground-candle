@@ -94,13 +94,14 @@ impl SequentialNetwork {
             for l in 0..config.convolution_layers.len() {
                 let (in_channels, out_channels, kernel) = config.convolution_layers[l];
                 network.add(candle_nn::conv2d(in_channels, out_channels, kernel, Default::default(), vs.pp(format!("c{l}")))?);
+                network.add(Activation::Relu);
                 network.add(MaxPoolLayer{dim: 2});
             }
             network.add(FlattenLayer{dim: 1});
-            network.add(candle_nn::linear(1024, 1024, vs.pp(format!("conv_fc0")))?);
+            network.add(candle_nn::linear(5408, 100, vs.pp(format!("conv_fc0")))?);
             network.add(Activation::Relu);
             network.add(Dropout::new(0.5));
-            network.add(candle_nn::linear(1024, 10, vs.pp(format!("conv_fc1")))?);
+            network.add(candle_nn::linear(100, 10, vs.pp(format!("conv_fc1")))?);
         }
 
         Ok(network)
@@ -325,7 +326,8 @@ pub fn main() -> MainResult {
     };
 
     let convolution_config = Config {
-        convolution_layers: vec![(1, 32, 5), (32, 64, 5)],
+        // let (in_channels, out_channels, kernel) = config.convolution_layers[l];
+        convolution_layers: vec![(1, 32, 3)],
         linear_layers: vec![],
         optimizer: TrainingOptimizer::AdamW,
         learning_rate: 0.001,
