@@ -2,7 +2,7 @@
 // use candle_core::IndexOp;
 use candle_core::IndexOp;
 use candle_core::{DType, Device, Module, Result, Tensor, Var, D};
-use candle_nn::{seq, Sequential, Activation};
+use candle_nn::{seq, Sequential, Activation, Dropout};
 use candle_nn::{VarBuilder, VarMap};
 use candle_nn::ops::{log_softmax, softmax};
 use candle_nn::Optimizer;
@@ -99,6 +99,7 @@ impl SequentialNetwork {
             network.add(FlattenLayer{dim: 1});
             network.add(candle_nn::linear(1024, 1024, vs.pp(format!("conv_fc0")))?);
             network.add(Activation::Relu);
+            network.add(Dropout::new(0.5));
             network.add(candle_nn::linear(1024, 10, vs.pp(format!("conv_fc1")))?);
         }
 
