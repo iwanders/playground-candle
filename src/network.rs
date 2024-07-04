@@ -1,11 +1,12 @@
 // use candle_nn::sequential::seq;
 // use candle_core::IndexOp;
 use candle_core::IndexOp;
-use candle_core::{DType, Device, Module, Result, Tensor, Var};
+use candle_core::{DType, Device, Module, Result, Tensor, Var, D};
 use candle_nn::{seq, Sequential, Activation};
 use candle_nn::{VarBuilder, VarMap};
-use candle_nn::ops::softmax;
+use candle_nn::ops::{log_softmax, softmax};
 use candle_nn::Optimizer;
+use candle_core::bail;
 
 use crate::candle_util::prelude::*;
 use crate::candle_util::SequentialT;
@@ -62,14 +63,6 @@ pub struct SequentialNetwork {
     device: Device,
 }
 
-pub struct DropoutLayer {
-    dropout: candle_nn::Dropout,
-}
-impl Module for DropoutLayer {
-    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        self.dropout.forward(&xs, false)
-    }
-}
 
 
 
@@ -80,38 +73,35 @@ impl SequentialNetwork {
         let mut sizes = config.linear_layers.clone();
 
         if config.convolution_layers.is_empty() {
+            if !config.convolution_layers.is_empty(){
+                bail!("convolution layers is not empty in linear config");
+            }
             sizes.insert(0, 28 * 28);
+            for l in 1..sizes.len() {
+                let layer = candle_nn::linear(sizes[l-1], sizes[l], vs.pp(format!("fc{l}")))?;
+                network.add(layer);
+                // Add sigmoid on all but the last layer.
+                if l != (sizes.len() - 1) {
+                    network.add(Activation::Sigmoid);
+                }
+            }
+            network.add(SoftmaxLayer::new(1));
         } else {
-            sizes.insert(0, 1024);
+            if !config.linear_layers.is_empty(){
+                bail!("linear layers is not empty in convolution config");
+            }
             network.add(ToImageLayer{});
             for l in 0..config.convolution_layers.len() {
                 let (in_channels, out_channels, kernel) = config.convolution_layers[l];
                 network.add(candle_nn::conv2d(in_channels, out_channels, kernel, Default::default(), vs.pp(format!("c{l}")))?);
                 network.add(MaxPoolLayer{dim: 2});
             }
-            // network = network.add(candle_nn::conv2d(1, 32, 5, Default::default(), vs.pp("c1"))?);
-            // network = network.add(MaxPoolLayer{dim: 2});
-            // network = network.add(candle_nn::conv2d(32, 64, 5, Default::default(), vs.pp("c2"))?);
-            // network = network.add(MaxPoolLayer{dim: 2});
             network.add(FlattenLayer{dim: 1});
+            network.add(candle_nn::linear(1024, 1024, vs.pp(format!("conv_fc0")))?);
+            network.add(Activation::Relu);
+            network.add(candle_nn::linear(1024, 10, vs.pp(format!("conv_fc1")))?);
         }
 
-        for l in 1..sizes.len() {
-            let layer = candle_nn::linear(sizes[l-1], sizes[l], vs.pp(format!("fc{l}")))?;
-            if l == 1 {
-                // println!("w: {:?}", layer.weight().p());
-            }
-            network.add(layer);
-            if l == 1 && !config.convolution_layers.is_empty() {
-                network.add(candle_nn::Dropout::new(0.5));
-            }
-            // Add sigmoid on all but the last layer.
-            if l != (sizes.len() - 1) {
-                network.add(Activation::Sigmoid);
-                // network = network.add(Activation::Relu);
-            }
-        }
-        network.add(SoftmaxLayer::new(1));
         Ok(network)
     }
 
@@ -278,7 +268,7 @@ pub fn fit(
             for idx in shuffled_indices.iter() {
                 let (train_img, train_label) = &mini_batches[*idx];
                 let logits = model.forward_t(&train_img)?;
-                let log_sm = logits.log()?;  // softmax is done by the network, so only need log here.
+                let log_sm = log_softmax(&logits, D::Minus1)?;
                 let loss = loss::nll(&log_sm, &train_label)?;
                 opt.backward_step(&loss)?;
                 sum_loss += loss.to_vec0::<f32>()?;
@@ -335,8 +325,7 @@ pub fn main() -> MainResult {
 
     let convolution_config = Config {
         convolution_layers: vec![(1, 32, 5), (32, 64, 5)],
-        // Don't have a drop out layer, what does a drop out layer do??
-        linear_layers: vec![1024, 10],
+        linear_layers: vec![],
         optimizer: TrainingOptimizer::AdamW,
         learning_rate: 0.001,
         iterations: 200,
@@ -344,8 +333,8 @@ pub fn main() -> MainResult {
     };
 
 
-    let config_used = linear_config;
-    // let config_used = convolution_config;
+    // let config_used = linear_config;
+    let config_used = convolution_config;
 
     let model = fit(&m.train_images,
         &m.train_labels,

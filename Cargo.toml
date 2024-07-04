@@ -32,6 +32,10 @@ image = { version = "0.25.0", default-features = false, features = ["jpeg", "png
 imageproc = { version = "0.24.0", default-features = false }
 
 
+#https://github.com/coreylowman/cudarc/issues/269
+#[patch.crates-io]
+#cudarc = { git = 'https://github.com/coreylowman/cudarc.git', tag = 'v0.11.6' }
+
 
 # https://doc.rust-lang.org/cargo/reference/profiles.html
 [profile.release]
