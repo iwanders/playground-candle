@@ -8,7 +8,7 @@ use candle_nn::Optimizer;
 use candle_nn::{Activation, Dropout};
 use candle_nn::{VarBuilder, VarMap};
 
-// use crate::candle_util::prelude::*;
+use crate::candle_util::prelude::*;
 use crate::candle_util::SequentialT;
 use crate::util;
 use rand::prelude::*;
@@ -116,6 +116,10 @@ impl SequentialNetwork {
     }
 
     pub fn load_default(vm: &VarMap, sizes: &[usize], device: &Device) -> Result<()> {
+        let mut sizes = sizes.to_vec();
+        if sizes[0] != 28 * 28 {
+            sizes.insert(0, 28 * 28);
+        }
         let mut rng = XorShiftRng::seed_from_u64(1);
         for l in 1..sizes.len() {
             let w_size = sizes[l] * sizes[l - 1];
@@ -223,12 +227,14 @@ pub fn fit(
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     let model = SequentialNetwork::new(vs.clone(), &config, &device)?;
 
+    println!("Creating batches");
     let mut mini_batches = util::create_mini_batches(&x, &y, config.batch_size, &device)?;
     for (_, train_label) in mini_batches.iter_mut() {
         *train_label = train_label.argmax(1)?;
     }
     let batch_len = mini_batches.len();
 
+    println!("Starting iterations");
     use rand::prelude::*;
     use rand_xorshift::XorShiftRng;
     let mut rng = XorShiftRng::seed_from_u64(1);
@@ -306,16 +312,36 @@ pub fn main() -> MainResult {
 
     let device = Device::Cpu;
     // let device = Device::new_cuda(0)?;
+    {
+        let manual_config = Config {
+            convolution_layers: vec![],
+            linear_layers: vec![10, 10],
+            optimizer: TrainingOptimizer::SGD,
+            learning_rate: 0.01,
+            iterations: 20,
+            batch_size: 64,
+        };
+        let varmap = VarMap::new();
+        SequentialNetwork::load_default(&varmap, &manual_config.linear_layers, &device)?;
+        let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+        let ann = SequentialNetwork::new(vs, &manual_config, &device)?;
+        // let mut t = vec![];
+        let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
+        // let r = ann.step_forward(&m.train_images.i((0..64, ..))?)?;
+        let r = softmax(&r, 1)?;
+        println!("r: {:?}", r.t()?.get(0)?.p());
+        // println!("r: {:?}", r.t()?.get(0)?.to_vec1::<f32>()?);
 
-    // let mut varmap = VarMap::new();
-    // let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    // let mut ann = SequentialNetwork::new(vs, &[28*28, 10, 10], 28 * 28, &device)?;
-    // let mut t = vec![];
-    // let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
-    // let r = ann.step_forward(&m.train_images.i((0..64, ..))?)?;
-    // println!("r: {:?}", r.t()?.get(0)?.to_vec1::<f32>()?);
+        // Check against numbers from manual.
+        let values = r.t()?.get(0)?.to_vec1::<f32>()?;
+        assert!((values[0] - 0.10819631).abs() < 0.0001);
+        assert!((values[1] - 0.116772465).abs() < 0.0001);
+        assert!((values[2] - 0.12155545).abs() < 0.0001);
+        assert!((values[3] - 0.11611187).abs() < 0.0001);
+        assert!((values[63] - 0.10917442).abs() < 0.0001);
+    }
 
-    let linear_config = Config {
+    let _linear_config = Config {
         convolution_layers: vec![],
         linear_layers: vec![1000, 10],
         optimizer: TrainingOptimizer::SGD,
@@ -324,7 +350,7 @@ pub fn main() -> MainResult {
         batch_size: 64,
     };
 
-    let convolution_config = Config {
+    let _convolution_config = Config {
         // let (in_channels, out_channels, kernel) = config.convolution_layers[l];
         convolution_layers: vec![(1, 32, 3)],
         linear_layers: vec![5408, 1000],
@@ -334,8 +360,9 @@ pub fn main() -> MainResult {
         batch_size: 64,
     };
 
-    // let config_used = linear_config;
-    let config_used = convolution_config;
+    // let config_used = _linear_config;
+    let config_used = _convolution_config;
+    println!("Fitting now using {config_used:?}");
 
     let model = fit(
         &m.train_images,
