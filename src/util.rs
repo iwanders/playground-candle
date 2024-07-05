@@ -43,7 +43,6 @@ pub fn create_mini_batches(
     Ok(mini)
 }
 
-
 pub fn mnist_image(v: &Tensor) -> anyhow::Result<image::GrayImage> {
     // image is 28x28, input tensor is 1x784.
     let mut img = image::GrayImage::new(28, 28);

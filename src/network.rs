@@ -1,12 +1,12 @@
 // use candle_nn::sequential::seq;
 // use candle_core::IndexOp;
+use candle_core::bail;
 use candle_core::IndexOp;
 use candle_core::{DType, Device, Module, Result, Tensor, Var, D};
-use candle_nn::{Activation, Dropout};
-use candle_nn::{VarBuilder, VarMap};
 use candle_nn::ops::{log_softmax, softmax};
 use candle_nn::Optimizer;
-use candle_core::bail;
+use candle_nn::{Activation, Dropout};
+use candle_nn::{VarBuilder, VarMap};
 
 // use crate::candle_util::prelude::*;
 use crate::candle_util::SequentialT;
@@ -15,13 +15,11 @@ use rand::prelude::*;
 use rand_xorshift::XorShiftRng;
 
 pub struct SoftmaxLayer {
-  pub dim: usize
+    pub dim: usize,
 }
 impl SoftmaxLayer {
     pub fn new(dim: usize) -> Self {
-        Self {
-            dim,
-        }
+        Self { dim }
     }
 }
 impl Module for SoftmaxLayer {
@@ -39,7 +37,7 @@ impl Module for ToImageLayer {
 }
 
 pub struct MaxPoolLayer {
-  pub dim: usize
+    pub dim: usize,
 }
 impl Module for MaxPoolLayer {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
@@ -47,10 +45,8 @@ impl Module for MaxPoolLayer {
     }
 }
 
-
-
 pub struct FlattenLayer {
-  pub dim: usize
+    pub dim: usize,
 }
 impl Module for FlattenLayer {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
@@ -63,9 +59,6 @@ pub struct SequentialNetwork {
     device: Device,
 }
 
-
-
-
 impl SequentialNetwork {
     fn create_network(vs: VarBuilder, config: &Config) -> Result<SequentialT> {
         let mut network = SequentialT::new();
@@ -73,12 +66,12 @@ impl SequentialNetwork {
         let mut sizes = config.linear_layers.clone();
 
         if config.convolution_layers.is_empty() {
-            if !config.convolution_layers.is_empty(){
+            if !config.convolution_layers.is_empty() {
                 bail!("convolution layers is not empty in linear config");
             }
             sizes.insert(0, 28 * 28);
             for l in 1..sizes.len() {
-                let layer = candle_nn::linear(sizes[l-1], sizes[l], vs.pp(format!("fc{l}")))?;
+                let layer = candle_nn::linear(sizes[l - 1], sizes[l], vs.pp(format!("fc{l}")))?;
                 network.add(layer);
                 // Add sigmoid on all but the last layer.
                 if l != (sizes.len() - 1) {
@@ -91,18 +84,32 @@ impl SequentialNetwork {
                 bail!("linear layers must be two long in convolution config");
             }
             // https://machinelearningmastery.com/how-to-develop-a-convolutional-neural-network-from-scratch-for-mnist-handwritten-digit-classification/
-            network.add(ToImageLayer{});
+            network.add(ToImageLayer {});
             for l in 0..config.convolution_layers.len() {
                 let (in_channels, out_channels, kernel) = config.convolution_layers[l];
-                network.add(candle_nn::conv2d(in_channels, out_channels, kernel, Default::default(), vs.pp(format!("c{l}")))?);
+                network.add(candle_nn::conv2d(
+                    in_channels,
+                    out_channels,
+                    kernel,
+                    Default::default(),
+                    vs.pp(format!("c{l}")),
+                )?);
                 network.add(Activation::Relu);
-                network.add(MaxPoolLayer{dim: 2});
+                network.add(MaxPoolLayer { dim: 2 });
             }
-            network.add(FlattenLayer{dim: 1});
-            network.add(candle_nn::linear(config.linear_layers[0], config.linear_layers[1], vs.pp(format!("conv_fc0")))?);
+            network.add(FlattenLayer { dim: 1 });
+            network.add(candle_nn::linear(
+                config.linear_layers[0],
+                config.linear_layers[1],
+                vs.pp(format!("conv_fc0")),
+            )?);
             network.add(Activation::Relu);
             network.add(Dropout::new(0.5));
-            network.add(candle_nn::linear(config.linear_layers[1], 10, vs.pp(format!("conv_fc1")))?);
+            network.add(candle_nn::linear(
+                config.linear_layers[1],
+                10,
+                vs.pp(format!("conv_fc1")),
+            )?);
         }
 
         Ok(network)
@@ -142,7 +149,10 @@ impl SequentialNetwork {
 
         let network = Self::create_network(vs, config)?;
 
-        Ok(SequentialNetwork { network, device: device.clone() })
+        Ok(SequentialNetwork {
+            network,
+            device: device.clone(),
+        })
     }
 
     pub fn forward(&self, input: &Tensor) -> Result<Tensor> {
@@ -155,7 +165,6 @@ impl SequentialNetwork {
         let z = self.network.forward_t(input, true)?;
         Ok(z)
     }
-
 
     // Determine the ratio of correct answers.
     fn predict(&self, x: &Tensor, y: &Tensor) -> anyhow::Result<f32> {
@@ -182,8 +191,6 @@ pub enum TrainingOptimizer {
     AdamW,
 }
 
-
-
 #[derive(Debug, Clone)]
 pub struct Config {
     pub convolution_layers: Vec<(usize, usize, usize)>,
@@ -209,7 +216,6 @@ pub fn fit(
     let x_test = x_test.to_device(&device)?;
     let y_test = y_test.to_device(&device)?;
 
-
     // let mut layers = layers.to_vec();
     let varmap = VarMap::new();
     // layers.insert(0, 28*28);
@@ -222,7 +228,6 @@ pub fn fit(
         *train_label = train_label.argmax(1)?;
     }
     let batch_len = mini_batches.len();
-
 
     use rand::prelude::*;
     use rand_xorshift::XorShiftRng;
@@ -252,14 +257,11 @@ pub fn fit(
             );
         }
     } else {
-
-
         let adamw_params = candle_nn::ParamsAdamW {
             lr: config.learning_rate as f64,
             ..Default::default()
         };
         let mut opt = candle_nn::AdamW::new(varmap.all_vars(), adamw_params)?;
-
 
         for epoch in 1..config.iterations {
             shuffled_indices.shuffle(&mut rng);
@@ -282,7 +284,6 @@ pub fn fit(
                 100. * test_accuracy
             );
         }
-
     }
     Ok(model)
 }
@@ -313,10 +314,10 @@ pub fn main() -> MainResult {
     // let r = ann.forward(&m.train_images.i((0..64, ..))?)?;
     // let r = ann.step_forward(&m.train_images.i((0..64, ..))?)?;
     // println!("r: {:?}", r.t()?.get(0)?.to_vec1::<f32>()?);
-    
-    let linear_config = Config{
+
+    let linear_config = Config {
         convolution_layers: vec![],
-        linear_layers: vec![10, 10],
+        linear_layers: vec![1000, 10],
         optimizer: TrainingOptimizer::SGD,
         learning_rate: 0.01,
         iterations: 20,
@@ -333,17 +334,16 @@ pub fn main() -> MainResult {
         batch_size: 64,
     };
 
-
     // let config_used = linear_config;
     let config_used = convolution_config;
 
-    let model = fit(&m.train_images,
+    let model = fit(
+        &m.train_images,
         &m.train_labels,
         &m.test_images,
         &m.test_labels,
-        config_used
-        )?;
-
+        config_used,
+    )?;
 
     let test_range = 0..100;
     let digits = model.classify(&m.test_images.i((test_range.clone(), ..))?)?;

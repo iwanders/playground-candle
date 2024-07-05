@@ -1,5 +1,5 @@
 // use candle_core::IndexOp;
-use candle_core::{Tensor, DType, ModuleT};
+use candle_core::{DType, ModuleT, Tensor};
 
 pub mod prelude {
     pub use super::PrintableTensorTrait;
@@ -22,7 +22,12 @@ pub struct PrintableTensor<'a> {
 impl<'a> std::fmt::Debug for PrintableTensor<'a> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         // Assume tensors are 2D?
-        write!(fmt, "Tensor: {:?} ({:?}): ", self.tensor.shape(), self.tensor.dtype())?;
+        write!(
+            fmt,
+            "Tensor: {:?} ({:?}): ",
+            self.tensor.shape(),
+            self.tensor.dtype()
+        )?;
         let dim_count = self.tensor.dims().len();
         if dim_count == 0 {
             write!(fmt, "∅")?;
@@ -68,9 +73,7 @@ pub struct SequentialT {
 
 impl SequentialT {
     pub fn new() -> Self {
-        Self {
-            layers: vec![],
-        }
+        Self { layers: vec![] }
     }
 
     pub fn add<T: ModuleT + 'static>(&mut self, v: T) {
@@ -96,7 +99,6 @@ impl SequentialT {
         Ok(xs)
     }
 }
-
 
 #[cfg(test)]
 mod test {
