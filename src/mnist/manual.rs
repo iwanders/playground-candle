@@ -1,4 +1,4 @@
-use crate::util;
+use super::util;
 use candle_core::IndexOp;
 use candle_core::{DType, Device, Tensor};
 use candle_nn::ops::softmax;

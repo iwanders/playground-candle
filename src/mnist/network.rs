@@ -1,3 +1,4 @@
+use super::util;
 // use candle_nn::sequential::seq;
 // use candle_core::IndexOp;
 use candle_core::bail;
@@ -10,7 +11,6 @@ use candle_nn::{VarBuilder, VarMap};
 
 use crate::candle_util::prelude::*;
 use crate::candle_util::SequentialT;
-use crate::util;
 use rand::prelude::*;
 use rand_xorshift::XorShiftRng;
 
