@@ -350,7 +350,7 @@ mod test {
         let x = Tensor::new(&x, &Device::Cpu)?;
         let y: [u8; 5] = [1, 8, 7, 3, 1];
         let y = Tensor::new(&y, &Device::Cpu)?;
-        let mini_batches = crate::util::create_mini_batches(&x, &y, 2, &Device::Cpu)?;
+        let mini_batches = super::util::create_mini_batches(&x, &y, 2, &Device::Cpu)?;
         println!("mini_batches: {:#?} ", mini_batches);
 
         for (x_part, y_part) in mini_batches {

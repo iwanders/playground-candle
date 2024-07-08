@@ -1,5 +1,6 @@
 pub mod candle_util;
 pub mod mnist;
+pub mod yolo;
 
 pub type MainResult = anyhow::Result<()>;
 pub fn main() -> MainResult {
