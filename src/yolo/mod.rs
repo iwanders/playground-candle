@@ -59,17 +59,7 @@ impl YoloV1 {
 
         
         network.add(candle_nn::conv2d(3, 64, 7, s2, vs.pp(format!("c0")))?);
-        // Is there an activation here?
-        // Yes; We use a linear activation function for the final layer and
-        //      all other layers use the following leaky rectified linear acti-
-        //      vation:
-        // Eq 2, p3.
-        //    f(x) = {   x, if x > 0
-        //               0.1x, otherwise.
-        // Candle implements as LeakyRelu as:
-        //     let zeros = xs.zeros_like()?;
-        //     xs.maximum(&zeros)? + xs.minimum(&zeros)? * negative_slope
-        network.add(Activation::LeakyRelu(0.1));
+        network.add(Activation::LeakyRelu(0.1)); // confirmed with test_leaky_relu.
         network.add(MaxPoolLayer::new(2)?);
         
 
@@ -87,6 +77,30 @@ impl YoloV1 {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    use crate::candle_util::approx_equal;
+    #[test]
+    fn test_leaky_relu() -> Result<()> {
+        // Eq 2, p3.
+        //    f(x) = {   x, if x > 0
+        //               0.1x, otherwise.
+        // Candle implements as LeakyRelu as:
+        //     let zeros = xs.zeros_like()?;
+        //     xs.maximum(&zeros)? + xs.minimum(&zeros)? * negative_slope
+        // Does that need a minus sign or not.
+        let device = Device::Cpu;
+        let v = |v: f32| Tensor::full(v, (), &device);
+
+        let paper_relu = |s: f32, v: f32| if v > 0.0 { v } else {s * v};
+        
+        approx_equal!(paper_relu(0.1, 1.0), Activation::LeakyRelu(0.1).forward(&v(1.0)?)?.to_scalar::<f32>()?, 0.01);
+        approx_equal!(paper_relu(0.1, -1.0), Activation::LeakyRelu(0.1).forward(&v(-1.0)?)?.to_scalar::<f32>()?, 0.01);
+        approx_equal!(paper_relu(0.1, 10.0), Activation::LeakyRelu(0.1).forward(&v(10.0)?)?.to_scalar::<f32>()?, 0.01);
+        approx_equal!(paper_relu(0.1, -10.0), Activation::LeakyRelu(0.1).forward(&v(-10.0)?)?.to_scalar::<f32>()?, 0.01);
+
+        Ok(())
+        
+    }
     #[test]
     fn instantiate() -> Result<()> {
         let device = Device::Cpu;
