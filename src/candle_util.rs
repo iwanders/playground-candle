@@ -1,5 +1,5 @@
 // use candle_core::IndexOp;
-use candle_core::{DType, ModuleT, Tensor};
+use candle_core::{DType, ModuleT, Tensor, Module};
 
 pub mod prelude {
     pub use super::PrintableTensorTrait;
@@ -99,6 +99,19 @@ impl SequentialT {
         Ok(xs)
     }
 }
+
+
+pub struct MaxPoolLayer {
+    pub dim: usize,
+}
+impl ModuleT for MaxPoolLayer {
+    fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor>
+    {
+        xs.max_pool2d(self.dim)
+    }
+
+}
+
 
 #[cfg(test)]
 mod test {

@@ -10,7 +10,7 @@ use candle_nn::{Activation, Dropout};
 use candle_nn::{VarBuilder, VarMap};
 
 use crate::candle_util::prelude::*;
-use crate::candle_util::SequentialT;
+use crate::candle_util::{SequentialT, MaxPoolLayer};
 use rand::prelude::*;
 use rand_xorshift::XorShiftRng;
 
@@ -33,15 +33,6 @@ impl Module for ToImageLayer {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
         let (b_sz, _img_dim) = xs.dims2()?;
         xs.reshape((b_sz, 1, 28, 28))
-    }
-}
-
-pub struct MaxPoolLayer {
-    pub dim: usize,
-}
-impl Module for MaxPoolLayer {
-    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        xs.max_pool2d(self.dim)
     }
 }
 
