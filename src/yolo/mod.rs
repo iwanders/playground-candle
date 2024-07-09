@@ -57,11 +57,25 @@ impl YoloV1 {
             groups: 1,
         };
 
-        
-        network.add(candle_nn::conv2d(3, 64, 7, s2, vs.pp(format!("c0")))?);
+        // Block 1: convolution layer.
+        network.add(candle_nn::conv2d(3, 64, 7, s2, vs.pp(format!("b1_c0")))?);
         network.add(Activation::LeakyRelu(0.1)); // confirmed with test_leaky_relu.
         network.add(MaxPoolLayer::new(2)?);
         
+        // Block 2: Convolution layer
+        network.add(candle_nn::conv2d(64, 192, 3, Default::default(), vs.pp(format!("b2_c0")))?);
+        network.add(Activation::LeakyRelu(0.1));
+        network.add(MaxPoolLayer::new(2)?);
+
+        // Block 3: Convolution layer
+        network.add(candle_nn::conv2d(192, 128, 1, Default::default(), vs.pp(format!("b3_c0")))?);
+        network.add(Activation::LeakyRelu(0.1));
+        network.add(candle_nn::conv2d(128, 256, 3, Default::default(), vs.pp(format!("b3_c1")))?);
+        network.add(Activation::LeakyRelu(0.1));
+        network.add(candle_nn::conv2d(256, 256, 1, Default::default(), vs.pp(format!("b3_c2")))?);
+        network.add(Activation::LeakyRelu(0.1));
+        network.add(candle_nn::conv2d(256, 512, 3, Default::default(), vs.pp(format!("b3_c3")))?);
+        network.add(MaxPoolLayer::new(2)?);
 
         Ok(Self {
             network,
@@ -108,7 +122,16 @@ mod test {
 
         let varmap = VarMap::new();
         let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-        let network = YoloV1::new(vs, &device)?;
+        let network = YoloV1::new(vs, &device);
+        let network = if let Err(e) = network {
+            eprintln!("{}", e);
+            // handle the error properly here
+            assert!(false);
+            unreachable!();
+        } else {
+            network.ok().unwrap()
+        };
+
 
 
         // Create a dummy image.
@@ -131,6 +154,7 @@ mod test {
         } else {
             r.ok().unwrap()
         };
+        let _r = r;
 
 
         Ok(())
