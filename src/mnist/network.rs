@@ -86,7 +86,7 @@ impl SequentialNetwork {
                     vs.pp(format!("c{l}")),
                 )?);
                 network.add(Activation::Relu);
-                network.add(MaxPoolLayer { dim: 2 });
+                network.add(MaxPoolLayer::new(2)?);
             }
             network.add(FlattenLayer { dim: 1 });
             network.add(candle_nn::linear(

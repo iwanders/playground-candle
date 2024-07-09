@@ -102,14 +102,20 @@ impl SequentialT {
 
 
 pub struct MaxPoolLayer {
-    pub dim: usize,
+    dim: usize,
+}
+impl MaxPoolLayer {
+    pub fn new(sz: usize) -> candle_core::Result<MaxPoolLayer> {
+        Ok(Self {
+            dim: sz
+        })
+    }
 }
 impl ModuleT for MaxPoolLayer {
     fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor>
     {
         xs.max_pool2d(self.dim)
     }
-
 }
 
 
