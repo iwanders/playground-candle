@@ -32,6 +32,10 @@ use rand_xorshift::XorShiftRng;
         What does the
             'we train the convolutional layers at half resolution; 224x244 and double for detection' 
         Mean? The first input layer is 448, so input needs to be 448
+
+
+ https://arxiv.org/pdf/1411.4038
+    Is a good read, and perhaps a better intermediate step than directly implementing Yolo.
 */
 
 /*
