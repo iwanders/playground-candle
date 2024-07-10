@@ -1,3 +1,5 @@
+
+// Unfinished; decided to first go implement https://arxiv.org/pdf/1411.4038: Fully Convolutional Networks for Semantic Segmentation
 use crate::candle_util::prelude::*;
 use crate::candle_util::SequentialT;
 use candle_core::bail;
@@ -80,6 +82,8 @@ impl YoloV1 {
         network.add(Activation::LeakyRelu(0.1));
         network.add(candle_nn::conv2d(256, 512, 3, Default::default(), vs.pp(format!("b3_c3")))?);
         network.add(MaxPoolLayer::new(2)?);
+
+        // Decided to first go implement 1411.4038
 
         Ok(Self {
             network,
