@@ -44,6 +44,7 @@ impl FCN32s {
         let mut network = SequentialT::new();
 
         // After https://raw.githubusercontent.com/shelhamer/fcn.berkeleyvision.org/master/voc-fcn32s/train.prototxt
+        // into https://ethereon.github.io/netscope/#/editor
 
         // Block 1
         network.add(candle_nn::conv2d(3, 64, 3, Default::default(), vs.pp(format!("b1_c0")))?);
@@ -101,7 +102,7 @@ impl FCN32s {
         // deconvolution with a kernel of 64.
 
         network.add(candle_nn::conv2d(4096, PASCAL_VOC_CLASSES, 1, Default::default(), vs.pp(format!("b8_c1")))?);
-        // 64 * 64 = 4096
+        // 64 * 64 = 4096, but with 500x500 input, the size after this layer is (batch, PASCAL_VOC_CLASSES, 4, 4)
         // Need a deconvolution, which apparently is also callec convtranspose2d
         // https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html#convtranspose2d
         let deconv_config = ConvTranspose2dConfig {
