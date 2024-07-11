@@ -2,7 +2,7 @@ use crate::candle_util::prelude::*;
 use crate::candle_util::SequentialT;
 use candle_core::bail;
 use candle_core::{DType, Device, Module, Result, Tensor, Var, D};
-use candle_nn::{VarBuilder, VarMap, Activation, Dropout};
+use candle_nn::{VarBuilder, VarMap, Activation, Dropout, ConvTranspose2dConfig};
 use crate::candle_util::MaxPoolLayer;
 /*
 use candle_core::IndexOp;
@@ -30,6 +30,8 @@ Fully Convolutional Networks for Semantic Segmentation
         Converts a PIL Image (H x W x C) to a Tensor of shape (C x H x W).
 */
 
+const PASCAL_VOC_CLASSES: usize = 21;
+
 pub struct FCN32s {
     network: SequentialT,
     device: Device,
@@ -40,6 +42,8 @@ pub struct FCN32s {
 impl FCN32s {
     pub fn new(vs: VarBuilder, device: &Device) -> Result<Self> {
         let mut network = SequentialT::new();
+
+        // After https://raw.githubusercontent.com/shelhamer/fcn.berkeleyvision.org/master/voc-fcn32s/train.prototxt
 
         // Block 1
         network.add(candle_nn::conv2d(3, 64, 3, Default::default(), vs.pp(format!("b1_c0")))?);
@@ -92,6 +96,22 @@ impl FCN32s {
         network.add(Activation::Relu);
         network.add(Dropout::new(0.5));
 
+        // What do we do here? We now end up with 4096 channels, that's hardly an image with an
+        // segmentation mask. Okay, according to one source we do an convolution to 4096, then a
+        // deconvolution with a kernel of 64.
+
+        network.add(candle_nn::conv2d(4096, PASCAL_VOC_CLASSES, 1, Default::default(), vs.pp(format!("b8_c1")))?);
+        // 64 * 64 = 4096
+        // Need a deconvolution, which apparently is also callec convtranspose2d
+        // https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html#convtranspose2d
+        let deconv_config = ConvTranspose2dConfig {
+            padding: 0,
+            output_padding: 0,
+            stride: 32,
+            dilation: 1,
+        };
+        network.add(candle_nn::conv::conv_transpose2d(PASCAL_VOC_CLASSES, PASCAL_VOC_CLASSES, 64, deconv_config, vs.pp(format!("b8_c2")))?);
+
         Ok(Self {
             network,
             device: device.clone(),
@@ -110,7 +130,7 @@ mod test {
     use crate::candle_util::approx_equal;
 
     #[test]
-    fn instantiate() -> Result<()> {
+    fn test_fcn_instantiate() -> Result<()> {
         let device = Device::Cpu;
         // let device = Device::new_cuda(0)?;
 
@@ -131,7 +151,7 @@ mod test {
         // Create a dummy image.
         // Image is 448x448
         // 0.5 gray
-        let gray = Tensor::full(0.5f32, (3, 448, 448), &device)?;
+        let gray = Tensor::full(0.5f32, (3, 500, 500), &device)?;
 
         // Make a batch of two of these.
         let batch = Tensor::stack(&[&gray, &gray], 0)?;
@@ -149,6 +169,7 @@ mod test {
             r.ok().unwrap()
         };
         let _r = r;
+        eprintln!("r shape: {:?}", _r.shape());
 
 
         Ok(())

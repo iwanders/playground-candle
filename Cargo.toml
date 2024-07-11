@@ -31,6 +31,7 @@ anyhow = "1.0.86"
 image = { version = "0.25.0", default-features = false, features = ["jpeg", "png"] }
 imageproc = { version = "0.24.0", default-features = false }
 
+voc-dataset = "0.3.0"
 
 #https://github.com/coreylowman/cudarc/issues/269
 #[patch.crates-io]
