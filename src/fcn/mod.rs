@@ -30,23 +30,25 @@ Fully Convolutional Networks for Semantic Segmentation
         Converts a PIL Image (H x W x C) to a Tensor of shape (C x H x W).
 */
 
-const PASCAL_VOC_CLASSES: usize = 21;
-
-pub struct FCN32s {
+pub struct VGG16 {
     network: SequentialT,
     device: Device,
 }
 
+impl VGG16 {
+    pub fn from_path<P>(path: P, device: Device) -> Result<Self>
+    where
+        P: AsRef<std::path::Path> + Copy {
 
+        let varmap = VarMap::new();
+        let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+        let vgg16 = VGG16::new(vs, &device);
+        todo!()
+    }
 
-impl FCN32s {
     pub fn new(vs: VarBuilder, device: &Device) -> Result<Self> {
         let mut network = SequentialT::new();
 
-        // After https://raw.githubusercontent.com/shelhamer/fcn.berkeleyvision.org/master/voc-fcn32s/train.prototxt
-        // into https://ethereon.github.io/netscope/#/editor
-
-        // VGG-16
         // Block 1
         network.add(candle_nn::conv2d(3, 64, 3, Default::default(), vs.pp(format!("b1_c0")))?);
         network.add(Activation::Relu);
@@ -88,6 +90,37 @@ impl FCN32s {
         network.add(Activation::Relu);
         network.add(MaxPoolLayer::new(2)?);
 
+        Ok(Self {
+            network,
+            device: device.clone(),
+        })
+    }
+
+    pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
+        self.network.forward(x)
+    }
+}
+
+
+const PASCAL_VOC_CLASSES: usize = 21;
+
+pub struct FCN32s {
+    vgg16: VGG16,
+    network: SequentialT,
+    device: Device,
+}
+
+
+
+impl FCN32s {
+    pub fn new(vgg16: VGG16, vs: VarBuilder, device: &Device) -> Result<Self> {
+        let mut network = SequentialT::new();
+
+        // After https://raw.githubusercontent.com/shelhamer/fcn.berkeleyvision.org/master/voc-fcn32s/train.prototxt
+        // into https://ethereon.github.io/netscope/#/editor
+
+        // VGG-16
+
         // End of VGG-16
 
         // Block 6
@@ -117,13 +150,15 @@ impl FCN32s {
         network.add(candle_nn::conv::conv_transpose2d(PASCAL_VOC_CLASSES, PASCAL_VOC_CLASSES, 64, deconv_config, vs.pp(format!("b8_c2")))?);
 
         Ok(Self {
+            vgg16,
             network,
             device: device.clone(),
         })
     }
 
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
-        self.network.forward(x)
+        let z = self.vgg16.forward(x)?;
+        self.network.forward(&z)
     }
 }
 
@@ -134,13 +169,51 @@ mod test {
     use crate::candle_util::approx_equal;
 
     #[test]
+    fn test_vgg_load() -> Result<()> {
+        let vgg_dir = std::env::var("VGG_MODEL");
+        let model_file = if let Ok(model_file) = vgg_dir {
+            model_file
+        } else {
+            return Ok(())
+        };
+
+        let device = Device::Cpu;
+        // let device = Device::new_cuda(0)?;
+        let vgg = VGG16::from_path(&model_file, device);
+
+        let vgg = if let Err(e) = vgg {
+            eprintln!("{}", e);
+            // handle the error properly here
+            assert!(false);
+            unreachable!();
+        } else {
+            vgg.ok().unwrap()
+        };
+
+
+        Ok(())
+    }
+    #[test]
     fn test_fcn_instantiate() -> Result<()> {
         let device = Device::Cpu;
         // let device = Device::new_cuda(0)?;
 
         let varmap = VarMap::new();
         let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-        let network = FCN32s::new(vs, &device);
+        let vgg16 = VGG16::new(vs, &device);
+
+        let vgg16 = if let Err(e) = vgg16 {
+            eprintln!("{}", e);
+            // handle the error properly here
+            assert!(false);
+            unreachable!();
+        } else {
+            vgg16.ok().unwrap()
+        };
+
+
+        let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+        let network = FCN32s::new(vgg16, vs, &device);
         let network = if let Err(e) = network {
             eprintln!("{}", e);
             // handle the error properly here
