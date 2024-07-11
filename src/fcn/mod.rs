@@ -46,6 +46,7 @@ impl FCN32s {
         // After https://raw.githubusercontent.com/shelhamer/fcn.berkeleyvision.org/master/voc-fcn32s/train.prototxt
         // into https://ethereon.github.io/netscope/#/editor
 
+        // VGG-16
         // Block 1
         network.add(candle_nn::conv2d(3, 64, 3, Default::default(), vs.pp(format!("b1_c0")))?);
         network.add(Activation::Relu);
@@ -86,6 +87,8 @@ impl FCN32s {
         network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp(format!("b5_c2")))?);
         network.add(Activation::Relu);
         network.add(MaxPoolLayer::new(2)?);
+
+        // End of VGG-16
 
         // Block 6
         network.add(candle_nn::conv2d(512, 4096, 7, Default::default(), vs.pp(format!("b6_c1")))?);
