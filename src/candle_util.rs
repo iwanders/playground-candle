@@ -118,6 +118,28 @@ impl ModuleT for MaxPoolLayer {
     }
 }
 
+
+pub fn load_from_safetensors<P>(path: P, device: &candle_core::Device) ->  candle_core::Result<std::collections::HashMap<String, Tensor>> 
+    where
+        P: AsRef<std::path::Path> + Copy {
+    // use candle_core::safetensors::Load;
+    use candle_core::safetensors::{Load, MmapedSafetensors};
+    let tensors = unsafe { MmapedSafetensors::new(path)? };
+    let tensors: std::collections::HashMap<_, _> = tensors.tensors().into_iter().collect();
+    let mut res = std::collections::HashMap::<String, Tensor>::new();
+    for (name, tensor) in tensors.iter() {
+        match tensors.get(name) {
+            Some(tensor_view) => {
+                let tensor = tensor_view.load(device)?;
+                res.insert(name.clone(), tensor);
+            }
+            None => {},
+        }
+    }
+    Ok(res)
+}
+
+
 macro_rules! approx_equal {
     ($a:expr, $b: expr, $max_error:expr) => {
         let delta = ($a - $b).abs();
@@ -132,8 +154,24 @@ macro_rules! approx_equal {
     };
 }
 
+
+macro_rules! error_unwrap {
+    ($a:expr) => {
+        if let Err(e) = $a {
+        eprintln!("{}", e);
+        // handle the error properly here
+        assert!(false);
+        unreachable!();
+        } else {
+            $a.ok().unwrap()
+        }
+    };
+}
+
+
 // https://stackoverflow.com/a/31749071  export the macro local to this file into the module.
 pub(crate) use approx_equal;
+pub(crate) use error_unwrap;
 
 
 #[cfg(test)]

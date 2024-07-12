@@ -39,54 +39,61 @@ impl VGG16 {
     pub fn from_path<P>(path: P, device: Device) -> Result<Self>
     where
         P: AsRef<std::path::Path> + Copy {
+        // https://github.com/huggingface/candle/pull/869
 
-        let varmap = VarMap::new();
-        let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-        let vgg16 = VGG16::new(vs, &device);
-        todo!()
+        // let m = crate::candle_util::load_from_safetensors(path, &device)?;
+        // for (k, v) in m.iter() {
+            // println!("{k:?} ");
+        // }
+
+        let vs = unsafe{VarBuilder::from_mmaped_safetensors(&[path],DType::F32, &device)?};
+        let vgg16 = VGG16::new(vs, &device)?;
+        Ok(vgg16)
     }
 
     pub fn new(vs: VarBuilder, device: &Device) -> Result<Self> {
         let mut network = SequentialT::new();
 
+        let vs = vs.pp("features");
+
         // Block 1
-        network.add(candle_nn::conv2d(3, 64, 3, Default::default(), vs.pp(format!("b1_c0")))?);
-        network.add(Activation::Relu);
-        network.add(candle_nn::conv2d(64, 64, 3, Default::default(), vs.pp(format!("b1_c1")))?);
-        network.add(Activation::Relu);
-        network.add(MaxPoolLayer::new(2)?);
+        network.add(candle_nn::conv2d(3, 64, 3, Default::default(), vs.pp("0"))?); // 0
+        network.add(Activation::Relu); // 1 
+        network.add(candle_nn::conv2d(64, 64, 3, Default::default(), vs.pp("2"))?); // 2
+        network.add(Activation::Relu); // 3
+        network.add(MaxPoolLayer::new(2)?); // 4
 
         // Block 2
-        network.add(candle_nn::conv2d(64, 128, 3, Default::default(), vs.pp(format!("b2_c0")))?);
-        network.add(Activation::Relu);
-        network.add(candle_nn::conv2d(128, 128, 3, Default::default(), vs.pp(format!("b2_c1")))?);
-        network.add(Activation::Relu);
-        network.add(MaxPoolLayer::new(2)?);
+        network.add(candle_nn::conv2d(64, 128, 3, Default::default(), vs.pp("5"))?); // 5
+        network.add(Activation::Relu); // 6
+        network.add(candle_nn::conv2d(128, 128, 3, Default::default(), vs.pp("7"))?); // 7
+        network.add(Activation::Relu); // 8
+        network.add(MaxPoolLayer::new(2)?); // 9
         
         // Block 3
-        network.add(candle_nn::conv2d(128, 256, 3, Default::default(), vs.pp(format!("b3_c0")))?);
-        network.add(Activation::Relu);
-        network.add(candle_nn::conv2d(256, 256, 3, Default::default(), vs.pp(format!("b3_c1")))?);
-        network.add(Activation::Relu);
-        network.add(candle_nn::conv2d(256, 256, 3, Default::default(), vs.pp(format!("b3_c1")))?);
-        network.add(Activation::Relu);
-        network.add(MaxPoolLayer::new(2)?);
+        network.add(candle_nn::conv2d(128, 256, 3, Default::default(), vs.pp("10"))?); // 10
+        network.add(Activation::Relu);// 11
+        network.add(candle_nn::conv2d(256, 256, 3, Default::default(), vs.pp("12"))?); // 12
+        network.add(Activation::Relu); // 13
+        network.add(candle_nn::conv2d(256, 256, 3, Default::default(), vs.pp("14"))?); // 14
+        network.add(Activation::Relu); // 15
+        network.add(MaxPoolLayer::new(2)?); // 16
         
         // Block 4
-        network.add(candle_nn::conv2d(256, 512, 3, Default::default(), vs.pp(format!("b4_c1")))?);
-        network.add(Activation::Relu);
-        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp(format!("b4_c2")))?);
-        network.add(Activation::Relu);
-        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp(format!("b4_c2")))?);
-        network.add(Activation::Relu);
-        network.add(MaxPoolLayer::new(2)?);
+        network.add(candle_nn::conv2d(256, 512, 3, Default::default(), vs.pp("17"))?); //17
+        network.add(Activation::Relu);// 18
+        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp("19"))?); // 19
+        network.add(Activation::Relu); // 20
+        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp("21"))?); // 21
+        network.add(Activation::Relu); // 22
+        network.add(MaxPoolLayer::new(2)?);// 23
 
         // Block 5
-        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp(format!("b5_c1")))?);
-        network.add(Activation::Relu);
-        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp(format!("b5_c2")))?);
-        network.add(Activation::Relu);
-        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp(format!("b5_c2")))?);
+        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp("24"))?); // 24
+        network.add(Activation::Relu); // 25
+        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp("26"))?); // 26
+        network.add(Activation::Relu); // 27
+        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp("28"))?); // 28
         network.add(Activation::Relu);
         network.add(MaxPoolLayer::new(2)?);
 
@@ -164,9 +171,11 @@ impl FCN32s {
 
 #[cfg(test)]
 mod test {
+
+
     use super::*;
 
-    use crate::candle_util::approx_equal;
+    use crate::candle_util::{approx_equal, error_unwrap};
 
     #[test]
     fn test_vgg_load() -> Result<()> {
@@ -181,14 +190,7 @@ mod test {
         // let device = Device::new_cuda(0)?;
         let vgg = VGG16::from_path(&model_file, device);
 
-        let vgg = if let Err(e) = vgg {
-            eprintln!("{}", e);
-            // handle the error properly here
-            assert!(false);
-            unreachable!();
-        } else {
-            vgg.ok().unwrap()
-        };
+        let vgg = error_unwrap!(vgg);
 
 
         Ok(())
@@ -202,27 +204,14 @@ mod test {
         let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
         let vgg16 = VGG16::new(vs, &device);
 
-        let vgg16 = if let Err(e) = vgg16 {
-            eprintln!("{}", e);
-            // handle the error properly here
-            assert!(false);
-            unreachable!();
-        } else {
-            vgg16.ok().unwrap()
-        };
+        let vgg16 = error_unwrap!(vgg16);
+
 
 
         let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
         let network = FCN32s::new(vgg16, vs, &device);
-        let network = if let Err(e) = network {
-            eprintln!("{}", e);
-            // handle the error properly here
-            assert!(false);
-            unreachable!();
-        } else {
-            network.ok().unwrap()
-        };
 
+        let network = error_unwrap!(network);
 
 
         // Create a dummy image.
@@ -237,14 +226,7 @@ mod test {
         let r = network.forward(&batch);
 
         // Do this here to get nice error message without newlines.
-        let r = if let Err(e) = r {
-            eprintln!("{}", e);
-            // handle the error properly here
-            assert!(false);
-            unreachable!();
-        } else {
-            r.ok().unwrap()
-        };
+        let r = error_unwrap!(r);
         let _r = r;
         eprintln!("r shape: {:?}", _r.shape());
 
