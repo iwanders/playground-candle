@@ -10,7 +10,7 @@ use candle_nn::{Activation, Dropout};
 use candle_nn::{VarBuilder, VarMap};
 
 use crate::candle_util::prelude::*;
-use crate::candle_util::{SequentialT, MaxPoolLayer};
+use crate::candle_util::{MaxPoolLayer, SequentialT};
 use rand::prelude::*;
 use rand_xorshift::XorShiftRng;
 

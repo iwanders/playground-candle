@@ -1,5 +1,5 @@
 // use candle_core::IndexOp;
-use candle_core::{DType, ModuleT, Tensor, Module};
+use candle_core::{DType, Module, ModuleT, Tensor};
 
 pub mod prelude {
     pub use super::PrintableTensorTrait;
@@ -100,28 +100,27 @@ impl SequentialT {
     }
 }
 
-
 pub struct MaxPoolLayer {
     dim: usize,
 }
 impl MaxPoolLayer {
     pub fn new(sz: usize) -> candle_core::Result<MaxPoolLayer> {
-        Ok(Self {
-            dim: sz
-        })
+        Ok(Self { dim: sz })
     }
 }
 impl ModuleT for MaxPoolLayer {
-    fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor>
-    {
+    fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
         xs.max_pool2d(self.dim)
     }
 }
 
-
-pub fn load_from_safetensors<P>(path: P, device: &candle_core::Device) ->  candle_core::Result<std::collections::HashMap<String, Tensor>> 
-    where
-        P: AsRef<std::path::Path> + Copy {
+pub fn load_from_safetensors<P>(
+    path: P,
+    device: &candle_core::Device,
+) -> candle_core::Result<std::collections::HashMap<String, Tensor>>
+where
+    P: AsRef<std::path::Path> + Copy,
+{
     // use candle_core::safetensors::Load;
     use candle_core::safetensors::{Load, MmapedSafetensors};
     let tensors = unsafe { MmapedSafetensors::new(path)? };
@@ -133,12 +132,11 @@ pub fn load_from_safetensors<P>(path: P, device: &candle_core::Device) ->  candl
                 let tensor = tensor_view.load(device)?;
                 res.insert(name.clone(), tensor);
             }
-            None => {},
+            None => {}
         }
     }
     Ok(res)
 }
-
 
 macro_rules! approx_equal {
     ($a:expr, $b: expr, $max_error:expr) => {
@@ -154,25 +152,22 @@ macro_rules! approx_equal {
     };
 }
 
-
 macro_rules! error_unwrap {
     ($a:expr) => {
         if let Err(e) = $a {
-        eprintln!("{}", e);
-        // handle the error properly here
-        assert!(false);
-        unreachable!();
+            eprintln!("{}", e);
+            // handle the error properly here
+            assert!(false);
+            unreachable!();
         } else {
             $a.ok().unwrap()
         }
     };
 }
 
-
 // https://stackoverflow.com/a/31749071  export the macro local to this file into the module.
 pub(crate) use approx_equal;
 pub(crate) use error_unwrap;
-
 
 #[cfg(test)]
 mod test {
