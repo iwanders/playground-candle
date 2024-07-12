@@ -194,23 +194,21 @@ mod test {
 
     #[test]
     fn test_vgg_load() -> Result<()> {
+        let device = Device::Cpu;
+
         let vgg_dir = std::env::var("VGG_MODEL");
-        let model_file = if let Ok(model_file) = vgg_dir {
-            model_file
+        let vgg = if let Ok(model_file) = vgg_dir {
+            let vgg = VGG16::from_path(&model_file, &device);
+            error_unwrap!(vgg)
         } else {
-            return Ok(())
+            let varmap = VarMap::new();
+            let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+            let vgg = VGG16::new(vs, &device);
+            error_unwrap!(vgg)
         };
 
-        let device = Device::Cpu;
-        // let device = Device::new_cuda(0)?;
-        let vgg = VGG16::from_path(&model_file, &device);
-
-        let vgg = error_unwrap!(vgg);
-
-
         // Create a dummy image.
-        // Image is 448x448
-        // 0.5 gray
+        // Image is 224x224, 3 channels,  make it 0.5 gray
         let gray = Tensor::full(0.5f32, (3, 224, 224), &device)?;
 
         // Make a batch of two of these.
@@ -219,11 +217,10 @@ mod test {
         // Pass that into the network..
         let r = vgg.forward(&batch);
 
-        // Do this here to get nice error message without newlines.
+        // Unwrap it
         let r = error_unwrap!(r);
         eprintln!("r shape: {:?}", r.shape());
         assert_eq!(r.shape().dims4()?, (2, 512, 7, 7));
-
 
         Ok(())
     }
