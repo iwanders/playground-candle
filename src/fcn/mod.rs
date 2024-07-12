@@ -40,7 +40,7 @@ pub struct VGG16 {
 }
 
 impl VGG16 {
-    pub fn from_path<P>(path: P, device: Device) -> Result<Self>
+    pub fn from_path<P>(path: P, device: &Device) -> Result<Self>
     where
         P: AsRef<std::path::Path> + Copy {
         // https://github.com/huggingface/candle/pull/869
@@ -50,8 +50,8 @@ impl VGG16 {
             // println!("{k:?} ");
         // }
 
-        let vs = unsafe{VarBuilder::from_mmaped_safetensors(&[path],DType::F32, &device)?};
-        let vgg16 = VGG16::new(vs, &device)?;
+        let vs = unsafe{VarBuilder::from_mmaped_safetensors(&[path],DType::F32, device)?};
+        let vgg16 = VGG16::new(vs, device)?;
         Ok(vgg16)
     }
 
@@ -203,9 +203,26 @@ mod test {
 
         let device = Device::Cpu;
         // let device = Device::new_cuda(0)?;
-        let vgg = VGG16::from_path(&model_file, device);
+        let vgg = VGG16::from_path(&model_file, &device);
 
         let vgg = error_unwrap!(vgg);
+
+
+        // Create a dummy image.
+        // Image is 448x448
+        // 0.5 gray
+        let gray = Tensor::full(0.5f32, (3, 224, 224), &device)?;
+
+        // Make a batch of two of these.
+        let batch = Tensor::stack(&[&gray, &gray], 0)?;
+        
+        // Pass that into the network..
+        let r = vgg.forward(&batch);
+
+        // Do this here to get nice error message without newlines.
+        let r = error_unwrap!(r);
+        eprintln!("r shape: {:?}", r.shape());
+        assert_eq!(r.shape().dims4()?, (2, 512, 7, 7));
 
 
         Ok(())
@@ -232,7 +249,7 @@ mod test {
         // Create a dummy image.
         // Image is 448x448
         // 0.5 gray
-        let gray = Tensor::full(0.5f32, (3, 500, 500), &device)?;
+        let gray = Tensor::full(0.5f32, (3, 224, 224), &device)?;
 
         // Make a batch of two of these.
         let batch = Tensor::stack(&[&gray, &gray], 0)?;
