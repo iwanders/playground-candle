@@ -30,6 +30,10 @@ Fully Convolutional Networks for Semantic Segmentation
         Converts a PIL Image (H x W x C) to a Tensor of shape (C x H x W).
 */
 
+
+/// VGG Network, only the convolution section
+///
+/// https://arxiv.org/pdf/1409.1556
 pub struct VGG16 {
     network: SequentialT,
     device: Device,
@@ -54,46 +58,57 @@ impl VGG16 {
     pub fn new(vs: VarBuilder, device: &Device) -> Result<Self> {
         let mut network = SequentialT::new();
 
+            
+        // The convolution stride is fixed to 1 pixel; the spatial padding of conv. layer input is
+        // such that the spatial resolution is preserved after convolution, i.e. the padding is 1
+        // pixel for 3 × 3 conv. layers.
+        let padding_one = candle_nn::conv::Conv2dConfig{
+            padding: 1,
+            stride: 1,
+            dilation: 1,
+            groups: 1,
+        };
+
         let vs = vs.pp("features");
 
         // Block 1
-        network.add(candle_nn::conv2d(3, 64, 3, Default::default(), vs.pp("0"))?); // 0
+        network.add(candle_nn::conv2d(3, 64, 3, padding_one, vs.pp("0"))?); // 0
         network.add(Activation::Relu); // 1 
-        network.add(candle_nn::conv2d(64, 64, 3, Default::default(), vs.pp("2"))?); // 2
+        network.add(candle_nn::conv2d(64, 64, 3, padding_one, vs.pp("2"))?); // 2
         network.add(Activation::Relu); // 3
         network.add(MaxPoolLayer::new(2)?); // 4
 
         // Block 2
-        network.add(candle_nn::conv2d(64, 128, 3, Default::default(), vs.pp("5"))?); // 5
+        network.add(candle_nn::conv2d(64, 128, 3, padding_one, vs.pp("5"))?); // 5
         network.add(Activation::Relu); // 6
-        network.add(candle_nn::conv2d(128, 128, 3, Default::default(), vs.pp("7"))?); // 7
+        network.add(candle_nn::conv2d(128, 128, 3, padding_one, vs.pp("7"))?); // 7
         network.add(Activation::Relu); // 8
         network.add(MaxPoolLayer::new(2)?); // 9
         
         // Block 3
-        network.add(candle_nn::conv2d(128, 256, 3, Default::default(), vs.pp("10"))?); // 10
+        network.add(candle_nn::conv2d(128, 256, 3, padding_one, vs.pp("10"))?); // 10
         network.add(Activation::Relu);// 11
-        network.add(candle_nn::conv2d(256, 256, 3, Default::default(), vs.pp("12"))?); // 12
+        network.add(candle_nn::conv2d(256, 256, 3, padding_one, vs.pp("12"))?); // 12
         network.add(Activation::Relu); // 13
-        network.add(candle_nn::conv2d(256, 256, 3, Default::default(), vs.pp("14"))?); // 14
+        network.add(candle_nn::conv2d(256, 256, 3, padding_one, vs.pp("14"))?); // 14
         network.add(Activation::Relu); // 15
         network.add(MaxPoolLayer::new(2)?); // 16
         
         // Block 4
-        network.add(candle_nn::conv2d(256, 512, 3, Default::default(), vs.pp("17"))?); //17
+        network.add(candle_nn::conv2d(256, 512, 3, padding_one, vs.pp("17"))?); //17
         network.add(Activation::Relu);// 18
-        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp("19"))?); // 19
+        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("19"))?); // 19
         network.add(Activation::Relu); // 20
-        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp("21"))?); // 21
+        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("21"))?); // 21
         network.add(Activation::Relu); // 22
         network.add(MaxPoolLayer::new(2)?);// 23
 
         // Block 5
-        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp("24"))?); // 24
+        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("24"))?); // 24
         network.add(Activation::Relu); // 25
-        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp("26"))?); // 26
+        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("26"))?); // 26
         network.add(Activation::Relu); // 27
-        network.add(candle_nn::conv2d(512, 512, 3, Default::default(), vs.pp("28"))?); // 28
+        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("28"))?); // 28
         network.add(Activation::Relu);
         network.add(MaxPoolLayer::new(2)?);
 
