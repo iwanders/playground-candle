@@ -5,9 +5,12 @@ pub mod fcn;
 
 pub type MainResult = anyhow::Result<()>;
 pub fn main() -> MainResult {
+    /*
     if std::env::var("MNIST_MANUAL").is_ok() {
         mnist::manual::main()
     } else {
         mnist::network::main()
     }
+    */
+    fcn::main()
 }

@@ -3,15 +3,16 @@ use crate::candle_util::MaxPoolLayer;
 use crate::candle_util::SequentialT;
 // use candle_core::bail;
 use candle_core::{DType, Device, Result, Tensor};
-use candle_nn::{Activation, ConvTranspose2dConfig, VarBuilder};
+use candle_nn::{Activation, ConvTranspose2dConfig, VarBuilder, VarMap};
+
+use rand::prelude::*;
+use rand_xorshift::XorShiftRng;
 /*
 use candle_core::IndexOp;
 use candle_nn::ops::{log_softmax, softmax};
 use candle_nn::Optimizer;
 use candle_nn::{Activation, Dropout};
 
-use rand::prelude::*;
-use rand_xorshift::XorShiftRng;
 */
 
 /*
@@ -239,6 +240,140 @@ impl FCN32s {
         let z = self.vgg16.forward(&x)?;
         self.network.forward(&z)
     }
+}
+
+
+fn lines_from_file(filename: impl AsRef<std::path::Path>) -> std::result::Result<std::collections::HashSet<String>, anyhow::Error> {
+    use std::io::BufRead;
+    let file = std::fs::File::open(filename)?;
+    let buf = std::io::BufReader::new(file);
+    let mut ids = vec![];
+    for l in buf.lines() {
+        let l = l?;
+        let s = l.split_whitespace().map(|z| z.to_owned()).collect::<Vec<_>>();
+        if s.len() == 1 {
+            ids.push(s[0].clone());
+        } else if s[1] == "1" {
+            ids.push(s[0].clone());
+        }
+        
+    }
+    Ok(ids.drain(..).collect())
+}
+
+
+pub fn gather_ids(
+    path: &std::path::Path,
+    classes: &[&str],
+) -> std::result::Result<(std::collections::HashSet<String>, std::collections::HashSet<String>), anyhow::Error> {
+    let mut seg_dir = path.to_owned().join("ImageSets/Segmentation");
+
+    let train_ids = lines_from_file(&seg_dir.join("train.txt"))?;
+    let val_ids = lines_from_file(&seg_dir.join("val.txt"))?;
+    println!("val_ids: {val_ids:?}");
+
+    let mut main_dir = path.to_owned().join("ImageSets/Main");
+
+    let mut collected_train: std::collections::HashSet<String> = Default::default();
+    let mut collected_val: std::collections::HashSet<String> = Default::default();
+    for c in classes {
+        let class_ids = lines_from_file(&main_dir.join(format!("{c}_trainval.txt")))?;
+        for c in class_ids {
+            if train_ids.contains(&c) {
+                collected_train.insert(c);
+            } else  if val_ids.contains(&c) {
+                collected_val.insert(c);
+            }
+        }
+    }
+
+    Ok((collected_train, collected_val))
+}
+
+pub struct SampleTensor {
+    pub sample: voc_dataset::Sample,
+    pub image: Tensor,
+    pub mask: Tensor,
+}
+
+impl SampleTensor {
+    pub fn load(
+        sample: voc_dataset::Sample,
+        device: &Device,
+    ) -> std::result::Result<SampleTensor, anyhow::Error> {
+        println!("sample: {sample:?}");
+        let image = Tensor::full(0.5f32, (3, 224, 224), device)?;
+        let mask = image.clone();
+        Ok(Self {
+            sample,
+            image,
+            mask,
+        })
+    }
+}
+
+pub fn fit(
+    fcn: &FCN32s,
+    path: &std::path::Path,
+    device: &Device,
+) -> std::result::Result<(), anyhow::Error> {
+
+    // Okay, that leaves 2913 images that have a segmentation mask.
+    // That's 2913 (images) * 224 (w) * 224 (h) * 3 (channels) * 4 (float) = 1 902 028 800
+    // 1.9 GB, that fits in RAM and VRAM, so lets convert all the images to tensors.
+
+    /*
+    const MINIBATCH_SIZE: usize = 20; // from the paper, p6.
+    let batch_count = v.len() / MINIBATCH_SIZE;
+
+    let s = SampleTensor::load(v[0].clone(), device)?;
+
+    let mut rng = XorShiftRng::seed_from_u64(1);
+    let mut shuffled_indices: Vec<usize> = (0..batch_count).collect();
+
+    println!("Samples segmented: {}", v.len());
+    */
+    todo!()
+}
+use anyhow::{Context};
+pub fn main() -> std::result::Result<(), anyhow::Error> {
+    let args = std::env::args().collect::<Vec<String>>();
+
+    let voc_dir = std::path::PathBuf::from(&args[1]);
+    let (train, val) = gather_ids(&voc_dir, &["person", "cat", "bicycle", "bird"])?;
+    println!("Train {}, val: {}", train.len(), val.len());
+
+    let samples = voc_dataset::load(&voc_dir)?;
+
+    let mut samples_train = vec![];
+    let mut samples_val = vec![];
+    println!("Samples start: {}", samples.len());
+    for s in samples {
+        if let Some(segmentation) = s.annotation.segmented {
+            if segmentation {
+                let name = s.image_path.file_stem().map(|z|z.to_str().map(|z|z.to_owned())).flatten().with_context(|| "failed to convert path")?;
+                if train.contains(&name) {
+                    samples_train.push(s);
+                } else if val.contains(&name) {
+                    samples_val.push(s);
+                }
+            }
+        }
+    }
+    println!("train: {}, val: {}", samples_train.len(), samples_val.len());
+
+    let device = Device::Cpu;
+    let varmap = VarMap::new();
+    let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+    let vgg16 = VGG16::new(vs, &device)?;
+
+    // let vgg16 = error_unwrap!(vgg16);
+
+    let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+    let network = FCN32s::new(vgg16, vs, &device)?;
+
+    fit(&network, &voc_dir, &device)?;
+    Ok(())
 }
 
 #[cfg(test)]
