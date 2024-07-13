@@ -1,9 +1,9 @@
-use crate::candle_util::prelude::*;
+// use crate::candle_util::prelude::*;
 use crate::candle_util::MaxPoolLayer;
 use crate::candle_util::SequentialT;
-use candle_core::bail;
-use candle_core::{DType, Device, Module, Result, Tensor, Var, D};
-use candle_nn::{Activation, ConvTranspose2dConfig, Dropout, VarBuilder, VarMap};
+// use candle_core::bail;
+use candle_core::{DType, Device, Result, Tensor};
+use candle_nn::{Activation, ConvTranspose2dConfig, VarBuilder};
 /*
 use candle_core::IndexOp;
 use candle_nn::ops::{log_softmax, softmax};
@@ -118,7 +118,8 @@ impl VGG16 {
     }
 
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
-        self.network.forward(x)
+        let x = x.to_device(&self.device)?;
+        self.network.forward(&x)
     }
 }
 
@@ -138,7 +139,7 @@ impl FCN32s {
         // into https://ethereon.github.io/netscope/#/editor
 
         // Tack on the head.
-        let deconv_config = candle_nn::conv::ConvTranspose2dConfig {
+        let deconv_config = ConvTranspose2dConfig {
             padding: 1,
             output_padding: 1,
             stride: 2,
@@ -146,29 +147,77 @@ impl FCN32s {
         };
         let norm_config = candle_nn::batch_norm::BatchNormConfig::default();
 
-
         network.add(Activation::Relu);
 
         // deconv1
-        network.add(candle_nn::conv::conv_transpose2d(512, 512, 3, deconv_config,vs.pp("deconv1"))?);
-        network.add(candle_nn::batch_norm::batch_norm(512, norm_config, vs.pp("deconv1_norm"))?);
+        network.add(candle_nn::conv::conv_transpose2d(
+            512,
+            512,
+            3,
+            deconv_config,
+            vs.pp("deconv1"),
+        )?);
+        network.add(candle_nn::batch_norm::batch_norm(
+            512,
+            norm_config,
+            vs.pp("deconv1_norm"),
+        )?);
 
         // deconv2
-        network.add(candle_nn::conv::conv_transpose2d(512, 256, 3, deconv_config,vs.pp("deconv2"))?);
-        network.add(candle_nn::batch_norm::batch_norm(256, norm_config, vs.pp("deconv2_norm"))?);
+        network.add(candle_nn::conv::conv_transpose2d(
+            512,
+            256,
+            3,
+            deconv_config,
+            vs.pp("deconv2"),
+        )?);
+        network.add(candle_nn::batch_norm::batch_norm(
+            256,
+            norm_config,
+            vs.pp("deconv2_norm"),
+        )?);
 
         // deconv3
-        network.add(candle_nn::conv::conv_transpose2d(256, 128, 3, deconv_config,vs.pp("deconv3"))?);
-        network.add(candle_nn::batch_norm::batch_norm(128, norm_config, vs.pp("deconv3_norm"))?);
+        network.add(candle_nn::conv::conv_transpose2d(
+            256,
+            128,
+            3,
+            deconv_config,
+            vs.pp("deconv3"),
+        )?);
+        network.add(candle_nn::batch_norm::batch_norm(
+            128,
+            norm_config,
+            vs.pp("deconv3_norm"),
+        )?);
 
         // deconv4
-        network.add(candle_nn::conv::conv_transpose2d(128, 64, 3, deconv_config,vs.pp("deconv4"))?);
-        network.add(candle_nn::batch_norm::batch_norm(64, norm_config, vs.pp("deconv4_norm"))?);
+        network.add(candle_nn::conv::conv_transpose2d(
+            128,
+            64,
+            3,
+            deconv_config,
+            vs.pp("deconv4"),
+        )?);
+        network.add(candle_nn::batch_norm::batch_norm(
+            64,
+            norm_config,
+            vs.pp("deconv4_norm"),
+        )?);
 
         // deconv5
-        network.add(candle_nn::conv::conv_transpose2d(64, 32, 3, deconv_config,vs.pp("deconv5"))?);
-        network.add(candle_nn::batch_norm::batch_norm(32, norm_config, vs.pp("deconv5_norm"))?);
-
+        network.add(candle_nn::conv::conv_transpose2d(
+            64,
+            32,
+            3,
+            deconv_config,
+            vs.pp("deconv5"),
+        )?);
+        network.add(candle_nn::batch_norm::batch_norm(
+            32,
+            norm_config,
+            vs.pp("deconv5_norm"),
+        )?);
 
         network.add(candle_nn::conv2d(
             32,
@@ -186,7 +235,8 @@ impl FCN32s {
     }
 
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
-        let z = self.vgg16.forward(x)?;
+        let x = x.to_device(&self.device)?;
+        let z = self.vgg16.forward(&x)?;
         self.network.forward(&z)
     }
 }
@@ -197,6 +247,7 @@ mod test {
     use super::*;
 
     use crate::candle_util::{approx_equal, error_unwrap};
+    use candle_nn::{VarBuilder, VarMap};
 
     #[test]
     fn test_vgg_load() -> Result<()> {
@@ -247,8 +298,7 @@ mod test {
         let network = error_unwrap!(network);
 
         // Create a dummy image.
-        // Image is 448x448
-        // 0.5 gray
+        // Image is 224x224, 3 channels,  make it 0.5 gray
         let gray = Tensor::full(0.5f32, (3, 224, 224), &device)?;
 
         // Make a batch of two of these.

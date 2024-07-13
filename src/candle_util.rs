@@ -1,5 +1,5 @@
 // use candle_core::IndexOp;
-use candle_core::{DType, Module, ModuleT, Tensor};
+use candle_core::{DType, ModuleT, Tensor};
 
 pub mod prelude {
     pub use super::PrintableTensorTrait;
@@ -110,6 +110,7 @@ impl MaxPoolLayer {
 }
 impl ModuleT for MaxPoolLayer {
     fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
+        let _ = train;
         xs.max_pool2d(self.dim)
     }
 }
@@ -126,7 +127,7 @@ where
     let tensors = unsafe { MmapedSafetensors::new(path)? };
     let tensors: std::collections::HashMap<_, _> = tensors.tensors().into_iter().collect();
     let mut res = std::collections::HashMap::<String, Tensor>::new();
-    for (name, tensor) in tensors.iter() {
+    for (name, _tensor) in tensors.iter() {
         match tensors.get(name) {
             Some(tensor_view) => {
                 let tensor = tensor_view.load(device)?;
@@ -138,6 +139,7 @@ where
     Ok(res)
 }
 
+#[macro_export]
 macro_rules! approx_equal {
     ($a:expr, $b: expr, $max_error:expr) => {
         let delta = ($a - $b).abs();
@@ -152,6 +154,7 @@ macro_rules! approx_equal {
     };
 }
 
+#[macro_export]
 macro_rules! error_unwrap {
     ($a:expr) => {
         if let Err(e) = $a {
@@ -166,8 +169,8 @@ macro_rules! error_unwrap {
 }
 
 // https://stackoverflow.com/a/31749071  export the macro local to this file into the module.
-pub(crate) use approx_equal;
-pub(crate) use error_unwrap;
+// pub(crate) use approx_equal;
+// pub(crate) use error_unwrap;
 
 #[cfg(test)]
 mod test {
