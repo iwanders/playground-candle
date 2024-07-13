@@ -137,58 +137,45 @@ impl FCN32s {
         // After https://raw.githubusercontent.com/shelhamer/fcn.berkeleyvision.org/master/voc-fcn32s/train.prototxt
         // into https://ethereon.github.io/netscope/#/editor
 
-        // VGG-16
-
-        // End of VGG-16
-
-        // Block 6
-        network.add(candle_nn::conv2d(
-            512,
-            4096,
-            7,
-            Default::default(),
-            vs.pp(format!("b6_c1")),
-        )?);
-        network.add(Activation::Relu);
-        network.add(Dropout::new(0.5));
-
-        // Block 7
-        network.add(candle_nn::conv2d(
-            4096,
-            4096,
-            1,
-            Default::default(),
-            vs.pp(format!("b7_c1")),
-        )?);
-        network.add(Activation::Relu);
-        network.add(Dropout::new(0.5));
-
-        // What do we do here? We now end up with 4096 channels, that's hardly an image with an
-        // segmentation mask. Okay, according to one source we do an convolution to 4096, then a
-        // deconvolution with a kernel of 64.
-
-        network.add(candle_nn::conv2d(
-            4096,
-            PASCAL_VOC_CLASSES,
-            1,
-            Default::default(),
-            vs.pp(format!("b8_c1")),
-        )?);
-        // 64 * 64 = 4096, but with 500x500 input, the size after this layer is (batch, PASCAL_VOC_CLASSES, 4, 4)
-        // Need a deconvolution, which apparently is also callec convtranspose2d
-        // https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html#convtranspose2d
-        let deconv_config = ConvTranspose2dConfig {
-            padding: 0,
-            output_padding: 0,
-            stride: 32,
+        // Tack on the head.
+        let deconv_config = candle_nn::conv::ConvTranspose2dConfig {
+            padding: 1,
+            output_padding: 1,
+            stride: 2,
             dilation: 1,
         };
-        network.add(candle_nn::conv::conv_transpose2d(
+        let norm_config = candle_nn::batch_norm::BatchNormConfig::default();
+
+
+        network.add(Activation::Relu);
+
+        // deconv1
+        network.add(candle_nn::conv::conv_transpose2d(512, 512, 3, deconv_config,vs.pp("deconv1"))?);
+        network.add(candle_nn::batch_norm::batch_norm(512, norm_config, vs.pp("deconv1_norm"))?);
+
+        // deconv2
+        network.add(candle_nn::conv::conv_transpose2d(512, 256, 3, deconv_config,vs.pp("deconv2"))?);
+        network.add(candle_nn::batch_norm::batch_norm(256, norm_config, vs.pp("deconv2_norm"))?);
+
+        // deconv3
+        network.add(candle_nn::conv::conv_transpose2d(256, 128, 3, deconv_config,vs.pp("deconv3"))?);
+        network.add(candle_nn::batch_norm::batch_norm(128, norm_config, vs.pp("deconv3_norm"))?);
+
+        // deconv4
+        network.add(candle_nn::conv::conv_transpose2d(128, 64, 3, deconv_config,vs.pp("deconv4"))?);
+        network.add(candle_nn::batch_norm::batch_norm(64, norm_config, vs.pp("deconv4_norm"))?);
+
+        // deconv5
+        network.add(candle_nn::conv::conv_transpose2d(64, 32, 3, deconv_config,vs.pp("deconv5"))?);
+        network.add(candle_nn::batch_norm::batch_norm(32, norm_config, vs.pp("deconv5_norm"))?);
+
+
+        network.add(candle_nn::conv2d(
+            32,
             PASCAL_VOC_CLASSES,
-            PASCAL_VOC_CLASSES,
-            64,
-            deconv_config,
-            vs.pp(format!("b8_c2")),
+            1,
+            Default::default(),
+            vs.pp(format!("classifier")),
         )?);
 
         Ok(Self {
