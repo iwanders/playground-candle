@@ -270,7 +270,7 @@ pub fn gather_ids(
 
     let train_ids = lines_from_file(&seg_dir.join("train.txt"))?;
     let val_ids = lines_from_file(&seg_dir.join("val.txt"))?;
-    println!("val_ids: {val_ids:?}");
+    // println!("val_ids: {val_ids:?}");
 
     let mut main_dir = path.to_owned().join("ImageSets/Main");
 
@@ -293,7 +293,111 @@ pub fn gather_ids(
 pub struct SampleTensor {
     pub sample: voc_dataset::Sample,
     pub image: Tensor,
-    pub mask: Tensor,
+    pub segmentation: Tensor,
+}
+
+
+
+pub fn rgbf32_to_image(v: &Tensor) -> anyhow::Result<image::Rgb32FImage> {
+    // image is 28x28, input tensor is 1x784.
+    let w = v.dims()[1] as u32;
+    let h = v.dims()[2] as u32;
+    let img = image::Rgb32FImage::from_vec(w, h, v.flatten_all()?.to_vec1()?).with_context(|| "buffer to small")?;
+    Ok(img)
+}
+pub fn img_tensor_to_png(v: &Tensor, path: &str) -> std::result::Result<(), anyhow::Error> {
+    let back_img = rgbf32_to_image(v)?;
+    let r = image::DynamicImage::ImageRgb32F(back_img).to_rgb8().save(path)?;
+    Ok(())
+}
+
+const CLASSESS: [&'static str; 21] = [
+    "NONE",
+    "aeroplane",
+    "bicycle",
+    "bird",
+    "boat",
+    "bottle",
+    "bus",
+    "car",
+    "cat",
+    "chair",
+    "cow",
+    "diningtable",
+    "dog",
+    "horse",
+    "motorbike",
+    "person",
+    "pottedplant",
+    "sheep",
+    "sofa",
+    "train",
+    "tvmonitor"
+];
+use image::Rgb;
+const COLORS: [Rgb<u8>; 21] = [
+    Rgb([0,0,0]), // "NONE",
+    Rgb([0,0,0]), // "aeroplane",
+    Rgb([0,0,0]), // "bicycle",
+    Rgb([0,0,0]), // "bird",
+    Rgb([0,0,0]), // "boat",
+    Rgb([0,0,0]), // "bottle",
+    Rgb([0,0,0]), // "bus",
+    Rgb([0,0,0]), // "car",
+    Rgb([64,0,0]), // "cat",
+    Rgb([0,0,0]), // "chair",
+    Rgb([0,0,0]), // "cow",
+    Rgb([0,0,0]), // "diningtable",
+    Rgb([0,0,0]), // "dog",
+    Rgb([0,0,0]), // "horse",
+    Rgb([0,0,0]), // "motorbike",
+    Rgb([0,0,0]), // "person",
+    Rgb([0,0,0]), // "pottedplant",
+    Rgb([0,0,0]), // "sheep",
+    Rgb([0,0,0]), // "sofa",
+    Rgb([0,0,0]), // "train",
+    Rgb([0,0,0]), // "tvmonitor"
+];
+const BORDER: Rgb<u8>= Rgb([224, 224, 192]);
+
+pub fn mask_to_tensor(img: &image::RgbImage, device: &Device) -> anyhow::Result<Tensor> {
+    // let mut x = Tensor::full(0u32, (1, 224, 224), device)?;
+    let mut index_vec = vec![];
+    let mut previous = (Rgb([0,0,0]), 0);
+    for y in 0..img.height() {
+        for x in 0..img.width() {
+            let p = img.get_pixel(x, y);
+            if previous.0 == *p {
+                index_vec.push(previous.1);
+            } else {
+                if BORDER == *p {
+                    previous = (*p, 0 as u32);
+                    index_vec.push(0);
+                    continue;
+                }
+                if let Some(index) = COLORS.iter().position(|z| z == p) {
+                    previous = (*p, index as u32);
+                    index_vec.push(index as u32);
+                } else {
+                    anyhow::bail!("could not find color {p:?}")
+                }
+            }
+        }
+    }
+    Ok(Tensor::from_vec(index_vec, (1, 224, 224), device)?)
+}
+pub fn tensor_to_mask(x: &Tensor) -> anyhow::Result<image::RgbImage> {
+    let w = x.dims()[1] as u32;
+    let h = x.dims()[2] as u32;
+    let mut pixels = Vec::with_capacity(3 * w as usize * h as usize);
+    for idx in x.flatten_all()?.to_vec1::<u32>()?.iter() {
+        let c = COLORS.get(*idx as usize).with_context(|| format!("no color for {idx:?}"))?;
+        pixels.push(c.0[0]);
+        pixels.push(c.0[1]);
+        pixels.push(c.0[2]);
+    }
+    let img = image::RgbImage::from_vec(w, h, pixels).with_context(|| "buffer to small")?;
+    Ok(img)
 }
 
 impl SampleTensor {
@@ -302,12 +406,35 @@ impl SampleTensor {
         device: &Device,
     ) -> std::result::Result<SampleTensor, anyhow::Error> {
         println!("sample: {sample:?}");
-        let image = Tensor::full(0.5f32, (3, 224, 224), device)?;
+
+        let img = ImageReader::open(&sample.image_path)?.decode()?;
+        let img = img.resize_exact(224, 224, image::imageops::FilterType::Lanczos3).to_rgb32f();
+        let image = Tensor::from_vec(img.into_vec(), (3, 224, 224), device)?;
+        println!("s: {:?}", image.shape());
+        // img_tensor_to_png(&image, "/tmp/foo.png")?;
+
+
+        let segmentation_path = sample.image_path.clone();
+        let segmentation_path = segmentation_path.parent().unwrap().parent().unwrap();
+        let segmentation_path = segmentation_path.join("SegmentationClass");
+        let segmentation_path = segmentation_path.join(sample.image_path.file_stem().unwrap()).with_extension("png");
+        println!("segmentaiton path: {segmentation_path:?}");
+        use image::io::Reader as ImageReader;
+        let img = ImageReader::open(&segmentation_path)?.decode()?;
+        let img = img.resize_exact(224, 224, image::imageops::FilterType::Nearest);
+        // let img = img.to_rgb32f();
+        let segmentation = mask_to_tensor(&img.to_rgb8(), device)?;
+        let back_to_img = tensor_to_mask(&segmentation)?;
+        // back_to_img.save("/tmp/mask.png")?;
+        // let image = Tensor::from_vec(img.into_vec(), (1, 224, 224), device)?;
+
+        // Next, read the mask from somewhere.
+        // let image = Tensor::full(0.5f32, (3, 224, 224), device)?;
         let mask = image.clone();
         Ok(Self {
             sample,
             image,
-            mask,
+            segmentation,
         })
     }
 }
@@ -337,6 +464,8 @@ pub fn fit(
 }
 use anyhow::{Context};
 pub fn main() -> std::result::Result<(), anyhow::Error> {
+    let device = Device::Cpu;
+
     let args = std::env::args().collect::<Vec<String>>();
 
     let voc_dir = std::path::PathBuf::from(&args[1]);
@@ -362,7 +491,13 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     }
     println!("train: {}, val: {}", samples_train.len(), samples_val.len());
 
-    let device = Device::Cpu;
+    // Next, convert the samples to individual tensors.
+    let mut tensor_samples_train = vec![];
+    for s in samples_train {
+        tensor_samples_train.push(SampleTensor::load(s, &device)?);
+        break;
+    }
+
     let varmap = VarMap::new();
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     let vgg16 = VGG16::new(vs, &device)?;
