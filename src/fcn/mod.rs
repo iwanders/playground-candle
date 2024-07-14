@@ -337,26 +337,26 @@ const CLASSESS: [&'static str; 21] = [
 use image::Rgb;
 const COLORS: [Rgb<u8>; 21] = [
     Rgb([0,0,0]), // "NONE",
-    Rgb([0,0,0]), // "aeroplane",
-    Rgb([0,0,0]), // "bicycle",
-    Rgb([0,0,0]), // "bird",
-    Rgb([0,0,0]), // "boat",
-    Rgb([0,0,0]), // "bottle",
-    Rgb([0,0,0]), // "bus",
-    Rgb([0,0,0]), // "car",
+    Rgb([128,0,0]), // "aeroplane",
+    Rgb([0,128,0]), // "bicycle",
+    Rgb([128,128,0]), // "bird",
+    Rgb([0,0,128]), // "boat",
+    Rgb([128,0,128]), // "bottle",
+    Rgb([0,128,128]), // "bus",
+    Rgb([128,128,128]), // "car",
     Rgb([64,0,0]), // "cat",
-    Rgb([0,0,0]), // "chair",
-    Rgb([0,0,0]), // "cow",
-    Rgb([0,0,0]), // "diningtable",
-    Rgb([0,0,0]), // "dog",
-    Rgb([0,0,0]), // "horse",
-    Rgb([0,0,0]), // "motorbike",
-    Rgb([0,0,0]), // "person",
-    Rgb([0,0,0]), // "pottedplant",
-    Rgb([0,0,0]), // "sheep",
-    Rgb([0,0,0]), // "sofa",
-    Rgb([0,0,0]), // "train",
-    Rgb([0,0,0]), // "tvmonitor"
+    Rgb([192,0,0]), // "chair",
+    Rgb([64,128,0]), // "cow",
+    Rgb([192,128,0]), // "diningtable",
+    Rgb([64,0,128]), // "dog",
+    Rgb([192,0,128]), // "horse",
+    Rgb([64,128,128]), // "motorbike",
+    Rgb([192,128,128]), // "person",
+    Rgb([0,64,0]), // "pottedplant",
+    Rgb([128,64,0]), // "sheep",
+    Rgb([0,192,0]), // "sofa",
+    Rgb([128,192,0]), // "train",
+    Rgb([0,64,128]), // "tvmonitor"
 ];
 const BORDER: Rgb<u8>= Rgb([224, 224, 192]);
 
@@ -494,8 +494,9 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     // Next, convert the samples to individual tensors.
     let mut tensor_samples_train = vec![];
     for s in samples_train {
+        // println!("{s:?}");
         tensor_samples_train.push(SampleTensor::load(s, &device)?);
-        break;
+        // break;
     }
 
     let varmap = VarMap::new();
