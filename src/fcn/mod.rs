@@ -5,6 +5,8 @@ use crate::candle_util::SequentialT;
 use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::{Activation, ConvTranspose2dConfig, VarBuilder, VarMap};
 
+use rayon::prelude::*;
+
 use rand::prelude::*;
 use rand_xorshift::XorShiftRng;
 /*
@@ -405,12 +407,12 @@ impl SampleTensor {
         sample: voc_dataset::Sample,
         device: &Device,
     ) -> std::result::Result<SampleTensor, anyhow::Error> {
-        println!("sample: {sample:?}");
+        // println!("sample: {sample:?}");
 
         let img = ImageReader::open(&sample.image_path)?.decode()?;
         let img = img.resize_exact(224, 224, image::imageops::FilterType::Lanczos3).to_rgb32f();
         let image = Tensor::from_vec(img.into_vec(), (3, 224, 224), device)?;
-        println!("s: {:?}", image.shape());
+        // println!("s: {:?}", image.shape());
         // img_tensor_to_png(&image, "/tmp/foo.png")?;
 
 
@@ -418,7 +420,7 @@ impl SampleTensor {
         let segmentation_path = segmentation_path.parent().unwrap().parent().unwrap();
         let segmentation_path = segmentation_path.join("SegmentationClass");
         let segmentation_path = segmentation_path.join(sample.image_path.file_stem().unwrap()).with_extension("png");
-        println!("segmentaiton path: {segmentation_path:?}");
+        // println!("segmentaiton path: {segmentation_path:?}");
         use image::io::Reader as ImageReader;
         let img = ImageReader::open(&segmentation_path)?.decode()?;
         let img = img.resize_exact(224, 224, image::imageops::FilterType::Nearest);
@@ -489,14 +491,11 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
             }
         }
     }
-    println!("train: {}, val: {}", samples_train.len(), samples_val.len());
 
-    // Next, convert the samples to individual tensors.
+    let tensor_samples_train_results = samples_train.par_iter().map(|s| SampleTensor::load(s.clone(), &device)).collect::<Vec<_>>();
     let mut tensor_samples_train = vec![];
-    for s in samples_train {
-        // println!("{s:?}");
-        tensor_samples_train.push(SampleTensor::load(s, &device)?);
-        // break;
+    for s in tensor_samples_train_results {
+        tensor_samples_train.push(s?);
     }
 
     let varmap = VarMap::new();

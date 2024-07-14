@@ -37,6 +37,7 @@ voc-dataset = "0.3.0"
 #[patch.crates-io]
 #cudarc = { git = 'https://github.com/coreylowman/cudarc.git', tag = 'v0.11.6' }
 
+rayon = "1.10.0"
 
 # https://doc.rust-lang.org/cargo/reference/profiles.html
 [profile.release]
