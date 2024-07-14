@@ -442,6 +442,63 @@ impl SampleTensor {
 }
 
 
+pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tensor> {
+    // https://pytorch.org/docs/stable/generated/torch.nn.BCELoss.html
+    // That's used in one implementation.
+    // Another uses
+    // y_comp = (truths==predicted)
+    // nvalid = (truths != 255).sum()
+    // bce = reduce_sum(-y_comp * log(predicted + 1e-7)) / nvalid
+    //
+    // Reading the BCELoss docs;
+    // Oh, that help does explain why it's clamped, which is that + 1e-7 in the 'one'
+    // implementation.
+    //
+    // Can we just drop half of the equation which means that mean(yn * log(xn)) remains?
+
+    if truths.dtype() != DType::U32 {
+        candle_core::bail!("truths has wrong type");
+    }
+    if predicted.dtype() != DType::U32 {
+        candle_core::bail!("predicted has wrong type");
+    }
+
+    let device = truths.device();
+
+    // Truths are already lacking the mask... but was that smart? :/
+    // Number of valid pixels is anything that in the truths doesn't have zero.
+    // Make a zero vector.
+    let zero_truths = Tensor::full(0u32, truths.shape(), device)?;
+    // ne; out comes same shape, but u8, so convert back to u32.
+    let not_zero = truths.ne(&zero_truths)?.to_dtype(DType::U32)?;
+    let not_zero_count = not_zero.sum_all()?.to_scalar::<u32>()?;
+
+    // Next, calculate the number of correct scalars.
+    let correct_pixels = truths.eq(predicted)?;
+    let correct_scalars = correct_pixels.to_dtype(DType::F32)?;
+    // println!("correct_pixels: {correct_pixels:?}");
+
+    let minus_one : Tensor = Tensor::new(-1.0f32,device)?;
+    let floor : Tensor = Tensor::new(1e-7f32,device)?;
+    let left_part = minus_one.broadcast_mul(&correct_scalars)? ;
+    // this feels wrong? Different classes have different weight? Maybe that doesn't matter as we
+    // multiply on the left with the class?
+    let predicted = predicted.to_dtype(DType::F32)?;
+    let combined = (left_part * (predicted.broadcast_add(&floor))?.log())?;
+
+    let combined_sum = combined.sum_all()?.to_scalar::<f32>()?;
+    let loss = combined_sum / (not_zero_count as f32);
+
+    // let correct_count = correct_u32s.sum_all()?.to_scalar::<u32>()?;
+
+    // println!("combined: {combined:?}");
+    // println!("not_zero_count: {not_zero_count:?}");
+    // println!("loss: {loss:?}");
+    // todo!()
+    Tensor::new(loss,device)
+}
+
+
 
 pub fn fit(
     varmap: &VarMap,
@@ -561,7 +618,7 @@ mod test {
 
     use super::*;
 
-    use crate::candle_util::{approx_equal, error_unwrap};
+    use crate::{approx_equal, error_unwrap};
     use candle_nn::{VarBuilder, VarMap};
 
     #[test]
@@ -627,6 +684,32 @@ mod test {
         let _r = r;
         eprintln!("r shape: {:?}", _r.shape());
 
+        Ok(())
+    }
+
+
+    #[test]
+    fn test_crossentropy() -> Result<()> {
+        let device = Device::Cpu;
+        /*
+            0 1 0
+            2 2 2
+            0 0 0
+        */
+
+        let truth = Tensor::from_slice(&[0u32, 1, 0, 2, 2, 2, 0, 0, 0], (1, 3, 3), &device)?;
+        // let truth_batch = Tensor::stack(&[&gray, &gray], 0)?;
+        let predicted = Tensor::from_slice(&[0u32, 1, 0, 0, 0, 0, 0, 0, 0], (1, 3, 3), &device)?;
+        let loss = error_unwrap!(binary_cross_entropy(&predicted, &truth));
+        let loss_a = loss.to_scalar::<f32>()?;
+        println!("loss_a: {loss_a:?}");
+
+        
+        let predicted = Tensor::from_slice(&[0u32, 1, 0, 2, 2, 2, 0, 0, 0], (1, 3, 3), &device)?;
+        let loss = error_unwrap!(binary_cross_entropy(&predicted, &truth));
+        let loss_b = loss.to_scalar::<f32>()?;
+        println!("loss_b: {loss_b:?}");
+        assert!(loss_a < loss_b);
         Ok(())
     }
 }
