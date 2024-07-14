@@ -709,7 +709,7 @@ mod test {
         let loss = error_unwrap!(binary_cross_entropy(&predicted, &truth));
         let loss_b = loss.to_scalar::<f32>()?;
         println!("loss_b: {loss_b:?}");
-        assert!(loss_a < loss_b);
+        assert!(loss_b < loss_a);
         Ok(())
     }
 }
