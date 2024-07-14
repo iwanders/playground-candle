@@ -3,7 +3,7 @@ use crate::candle_util::MaxPoolLayer;
 use crate::candle_util::SequentialT;
 // use candle_core::bail;
 use candle_core::{DType, Device, Result, Tensor};
-use candle_nn::{Activation, ConvTranspose2dConfig, VarBuilder, VarMap};
+use candle_nn::{Activation, ConvTranspose2dConfig, VarBuilder, VarMap, Optimizer};
 
 use rayon::prelude::*;
 
@@ -441,27 +441,67 @@ impl SampleTensor {
     }
 }
 
+
+
 pub fn fit(
+    varmap: &VarMap,
     fcn: &FCN32s,
     path: &std::path::Path,
     device: &Device,
+    sample_train: &Vec<SampleTensor>,
+    sample_val: &Vec<SampleTensor>,
 ) -> std::result::Result<(), anyhow::Error> {
 
     // Okay, that leaves 2913 images that have a segmentation mask.
     // That's 2913 (images) * 224 (w) * 224 (h) * 3 (channels) * 4 (float) = 1 902 028 800
     // 1.9 GB, that fits in RAM and VRAM, so lets convert all the images to tensors.
 
-    /*
     const MINIBATCH_SIZE: usize = 20; // from the paper, p6.
-    let batch_count = v.len() / MINIBATCH_SIZE;
-
-    let s = SampleTensor::load(v[0].clone(), device)?;
+    let batch_count = sample_train.len() / MINIBATCH_SIZE;
 
     let mut rng = XorShiftRng::seed_from_u64(1);
     let mut shuffled_indices: Vec<usize> = (0..batch_count).collect();
 
-    println!("Samples segmented: {}", v.len());
-    */
+    // Collapse all sample_vals to a single tensor.
+    let val_input = sample_val.iter().map(|z| &z.image).collect::<Vec<_>>();
+    let val_input_tensor = Tensor::stack(&val_input, 0)?;
+    let val_output = sample_val.iter().map(|z| &z.segmentation).collect::<Vec<_>>();
+    let val_output_tensor = Tensor::stack(&val_output, 0)?;
+    
+
+    let learning_rate = 1e-4;
+    // sgd doesn't support momentum, but it would be 0.9
+    let mut sgd = candle_nn::SGD::new(varmap.all_vars(), learning_rate)?;
+    for epoch in 1..10 {
+        shuffled_indices.shuffle(&mut rng);
+        // create batches
+        for batch_indices in shuffled_indices.chunks(MINIBATCH_SIZE) {
+            let train_input = sample_train.iter().map(|z| &z.image).collect::<Vec<_>>();
+            let train_input_tensor = Tensor::stack(&train_input, 0)?;
+            let train_output = sample_train.iter().map(|z| &z.segmentation).collect::<Vec<_>>();
+            let train_output_tensor = Tensor::stack(&train_output, 0)?;
+        }
+        /*
+        let mut sum_loss = 0f32;
+        for idx in shuffled_indices.iter() {
+            let (train_img, train_label) = &mini_batches[*idx];
+            let logits = model.forward_t(&train_img)?;
+            let log_sm = log_softmax(&logits, D::Minus1)?;
+            let loss = loss::nll(&log_sm, &train_label)?;
+            sgd.backward_step(&loss)?;
+            sum_loss += loss.to_vec0::<f32>()?;
+        }
+        let avg_loss = sum_loss / batch_len as f32;
+        let test_accuracy = model.predict(&x_test, &y_test)?;
+        println!(
+            "{epoch:4} train loss {:8.5} test acc: {:5.2}%",
+            avg_loss,
+            100. * test_accuracy
+        );
+        */
+    }
+
+    /**/
     todo!()
 }
 use anyhow::{Context};
@@ -497,6 +537,11 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     for s in tensor_samples_train_results {
         tensor_samples_train.push(s?);
     }
+    let tensor_samples_val_results = samples_val.par_iter().map(|s| SampleTensor::load(s.clone(), &device)).collect::<Vec<_>>();
+    let mut tensor_samples_val = vec![];
+    for s in tensor_samples_val_results {
+        tensor_samples_val.push(s?);
+    }
 
     let varmap = VarMap::new();
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
@@ -507,7 +552,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     let network = FCN32s::new(vgg16, vs, &device)?;
 
-    fit(&network, &voc_dir, &device)?;
+    fit(&varmap, &network, &voc_dir, &device, &tensor_samples_train, &tensor_samples_val)?;
     Ok(())
 }
 
