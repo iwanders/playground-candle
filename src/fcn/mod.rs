@@ -615,6 +615,9 @@ pub fn fit(
             }
 
             let batch_loss = binary_cross_entropy(&train_output_tensor, &logits)?;
+            println!("Batch logits shape: {logits:?}");
+            println!("Batch output truth: {train_output_tensor:?}");
+            println!("Going into backwards step");
             sgd.backward_step(&batch_loss)?;
             let batch_loss_f32 = batch_loss.to_scalar::<f32>()?;
             sum_loss += batch_loss.to_scalar::<f32>()?;
