@@ -2,7 +2,7 @@
 use crate::candle_util::MaxPoolLayer;
 use crate::candle_util::SequentialT;
 // use candle_core::bail;
-use candle_core::{DType, Device, Result, Tensor, D};
+use candle_core::{DType, Device, Result, Tensor, D, IndexOp};
 use candle_nn::{Activation, ConvTranspose2dConfig, VarBuilder, VarMap, Optimizer, ModuleT};
 use candle_nn::ops::{log_softmax};
 
@@ -419,6 +419,11 @@ pub fn tensor_to_mask(x: &Tensor) -> anyhow::Result<image::RgbImage> {
     Ok(img)
 }
 
+pub fn batch_tensor_to_mask(index: usize, x: &Tensor) -> anyhow::Result<image::RgbImage> {
+    let z = x.i(0)?;
+    tensor_to_mask(&z)
+}
+
 impl SampleTensor {
     pub fn load(
         sample: voc_dataset::Sample,
@@ -564,6 +569,11 @@ pub fn fit(
             let logits = fcn.forward_t(&train_input_tensor, true)?;
             let y_hat = logits.argmax_keepdim(1)?; // get maximum in the class dimension
             println!("y_hat shape: {:?} t: {:?}", y_hat.shape(), y_hat.dtype());
+            {
+                let img = batch_tensor_to_mask(0, &y_hat)?;
+                img.save(format!("/tmp/y_hat_{epoch}_{bi}.png"))?;
+            }
+
             let batch_loss = binary_cross_entropy(&y_hat, &train_output_tensor)?;
             sgd.backward_step(&batch_loss)?;
             let batch_loss_f32 = batch_loss.to_scalar::<f32>()?;
