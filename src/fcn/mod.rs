@@ -2,9 +2,9 @@
 use crate::candle_util::MaxPoolLayer;
 use crate::candle_util::SequentialT;
 // use candle_core::bail;
-use candle_core::{DType, Device, Result, Tensor, D, IndexOp};
-use candle_nn::{Activation, ConvTranspose2dConfig, VarBuilder, VarMap, Optimizer, ModuleT};
-use candle_nn::ops::{log_softmax};
+use candle_core::{DType, Device, IndexOp, Result, Tensor, D};
+use candle_nn::ops::log_softmax;
+use candle_nn::{Activation, ConvTranspose2dConfig, ModuleT, Optimizer, VarBuilder, VarMap};
 
 use rayon::prelude::*;
 
@@ -133,7 +133,6 @@ impl ModuleT for VGG16 {
     }
 }
 
-
 const PASCAL_VOC_CLASSES: usize = 21;
 
 pub struct FCN32s {
@@ -257,34 +256,41 @@ impl ModuleT for FCN32s {
         let x = x.to_device(&self.device)?;
         let z = self.vgg16.forward_t(&x, train)?;
         self.network.forward_t(&z, train)
-        
     }
 }
 
-
-fn lines_from_file(filename: impl AsRef<std::path::Path>) -> std::result::Result<std::collections::HashSet<String>, anyhow::Error> {
+fn lines_from_file(
+    filename: impl AsRef<std::path::Path>,
+) -> std::result::Result<std::collections::HashSet<String>, anyhow::Error> {
     use std::io::BufRead;
     let file = std::fs::File::open(filename)?;
     let buf = std::io::BufReader::new(file);
     let mut ids = vec![];
     for l in buf.lines() {
         let l = l?;
-        let s = l.split_whitespace().map(|z| z.to_owned()).collect::<Vec<_>>();
+        let s = l
+            .split_whitespace()
+            .map(|z| z.to_owned())
+            .collect::<Vec<_>>();
         if s.len() == 1 {
             ids.push(s[0].clone());
         } else if s[1] == "1" {
             ids.push(s[0].clone());
         }
-        
     }
     Ok(ids.drain(..).collect())
 }
 
-
 pub fn gather_ids(
     path: &std::path::Path,
     classes: &[&str],
-) -> std::result::Result<(std::collections::HashSet<String>, std::collections::HashSet<String>), anyhow::Error> {
+) -> std::result::Result<
+    (
+        std::collections::HashSet<String>,
+        std::collections::HashSet<String>,
+    ),
+    anyhow::Error,
+> {
     let mut seg_dir = path.to_owned().join("ImageSets/Segmentation");
 
     let train_ids = lines_from_file(&seg_dir.join("train.txt"))?;
@@ -300,7 +306,7 @@ pub fn gather_ids(
         for c in class_ids {
             if train_ids.contains(&c) {
                 collected_train.insert(c);
-            } else  if val_ids.contains(&c) {
+            } else if val_ids.contains(&c) {
                 collected_val.insert(c);
             }
         }
@@ -315,18 +321,19 @@ pub struct SampleTensor {
     pub segmentation: Tensor,
 }
 
-
-
 pub fn rgbf32_to_image(v: &Tensor) -> anyhow::Result<image::Rgb32FImage> {
     // image is 28x28, input tensor is 1x784.
     let w = v.dims()[1] as u32;
     let h = v.dims()[2] as u32;
-    let img = image::Rgb32FImage::from_vec(w, h, v.flatten_all()?.to_vec1()?).with_context(|| "buffer to small")?;
+    let img = image::Rgb32FImage::from_vec(w, h, v.flatten_all()?.to_vec1()?)
+        .with_context(|| "buffer to small")?;
     Ok(img)
 }
 pub fn img_tensor_to_png(v: &Tensor, path: &str) -> std::result::Result<(), anyhow::Error> {
     let back_img = rgbf32_to_image(v)?;
-    let r = image::DynamicImage::ImageRgb32F(back_img).to_rgb8().save(path)?;
+    let r = image::DynamicImage::ImageRgb32F(back_img)
+        .to_rgb8()
+        .save(path)?;
     Ok(())
 }
 
@@ -351,38 +358,38 @@ const CLASSESS: [&'static str; 21] = [
     "sheep",
     "sofa",
     "train",
-    "tvmonitor"
+    "tvmonitor",
 ];
 use image::Rgb;
 const COLORS: [Rgb<u8>; 21] = [
-    Rgb([0,0,0]), // "NONE",
-    Rgb([128,0,0]), // "aeroplane",
-    Rgb([0,128,0]), // "bicycle",
-    Rgb([128,128,0]), // "bird",
-    Rgb([0,0,128]), // "boat",
-    Rgb([128,0,128]), // "bottle",
-    Rgb([0,128,128]), // "bus",
-    Rgb([128,128,128]), // "car",
-    Rgb([64,0,0]), // "cat",
-    Rgb([192,0,0]), // "chair",
-    Rgb([64,128,0]), // "cow",
-    Rgb([192,128,0]), // "diningtable",
-    Rgb([64,0,128]), // "dog",
-    Rgb([192,0,128]), // "horse",
-    Rgb([64,128,128]), // "motorbike",
-    Rgb([192,128,128]), // "person",
-    Rgb([0,64,0]), // "pottedplant",
-    Rgb([128,64,0]), // "sheep",
-    Rgb([0,192,0]), // "sofa",
-    Rgb([128,192,0]), // "train",
-    Rgb([0,64,128]), // "tvmonitor"
+    Rgb([0, 0, 0]),       // "NONE",
+    Rgb([128, 0, 0]),     // "aeroplane",
+    Rgb([0, 128, 0]),     // "bicycle",
+    Rgb([128, 128, 0]),   // "bird",
+    Rgb([0, 0, 128]),     // "boat",
+    Rgb([128, 0, 128]),   // "bottle",
+    Rgb([0, 128, 128]),   // "bus",
+    Rgb([128, 128, 128]), // "car",
+    Rgb([64, 0, 0]),      // "cat",
+    Rgb([192, 0, 0]),     // "chair",
+    Rgb([64, 128, 0]),    // "cow",
+    Rgb([192, 128, 0]),   // "diningtable",
+    Rgb([64, 0, 128]),    // "dog",
+    Rgb([192, 0, 128]),   // "horse",
+    Rgb([64, 128, 128]),  // "motorbike",
+    Rgb([192, 128, 128]), // "person",
+    Rgb([0, 64, 0]),      // "pottedplant",
+    Rgb([128, 64, 0]),    // "sheep",
+    Rgb([0, 192, 0]),     // "sofa",
+    Rgb([128, 192, 0]),   // "train",
+    Rgb([0, 64, 128]),    // "tvmonitor"
 ];
-const BORDER: Rgb<u8>= Rgb([224, 224, 192]);
+const BORDER: Rgb<u8> = Rgb([224, 224, 192]);
 
 pub fn mask_to_tensor(img: &image::RgbImage, device: &Device) -> anyhow::Result<Tensor> {
     // let mut x = Tensor::full(0u32, (1, 224, 224), device)?;
     let mut index_vec = vec![];
-    let mut previous = (Rgb([0,0,0]), 0);
+    let mut previous = (Rgb([0, 0, 0]), 0);
     for y in 0..img.height() {
         for x in 0..img.width() {
             let p = img.get_pixel(x, y);
@@ -410,7 +417,9 @@ pub fn tensor_to_mask(x: &Tensor) -> anyhow::Result<image::RgbImage> {
     let h = x.dims()[2] as u32;
     let mut pixels = Vec::with_capacity(3 * w as usize * h as usize);
     for idx in x.flatten_all()?.to_vec1::<u32>()?.iter() {
-        let c = COLORS.get(*idx as usize).with_context(|| format!("no color for {idx:?}"))?;
+        let c = COLORS
+            .get(*idx as usize)
+            .with_context(|| format!("no color for {idx:?}"))?;
         pixels.push(c.0[0]);
         pixels.push(c.0[1]);
         pixels.push(c.0[2]);
@@ -432,16 +441,19 @@ impl SampleTensor {
         // println!("sample: {sample:?}");
 
         let img = ImageReader::open(&sample.image_path)?.decode()?;
-        let img = img.resize_exact(224, 224, image::imageops::FilterType::Lanczos3).to_rgb32f();
+        let img = img
+            .resize_exact(224, 224, image::imageops::FilterType::Lanczos3)
+            .to_rgb32f();
         let image = Tensor::from_vec(img.into_vec(), (3, 224, 224), device)?;
         // println!("s: {:?}", image.shape());
         // img_tensor_to_png(&image, "/tmp/foo.png")?;
 
-
         let segmentation_path = sample.image_path.clone();
         let segmentation_path = segmentation_path.parent().unwrap().parent().unwrap();
         let segmentation_path = segmentation_path.join("SegmentationClass");
-        let segmentation_path = segmentation_path.join(sample.image_path.file_stem().unwrap()).with_extension("png");
+        let segmentation_path = segmentation_path
+            .join(sample.image_path.file_stem().unwrap())
+            .with_extension("png");
         // println!("segmentaiton path: {segmentation_path:?}");
         use image::io::Reader as ImageReader;
         let img = ImageReader::open(&segmentation_path)?.decode()?;
@@ -462,7 +474,6 @@ impl SampleTensor {
         })
     }
 }
-
 
 pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tensor> {
     // https://pytorch.org/docs/stable/generated/torch.nn.BCELoss.html
@@ -500,9 +511,9 @@ pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tenso
     let correct_scalars = correct_pixels.to_dtype(DType::F32)?;
     // println!("correct_pixels: {correct_pixels:?}");
 
-    let minus_one : Tensor = Tensor::new(-1.0f32,device)?;
-    let floor : Tensor = Tensor::new(1e-7f32,device)?;
-    let left_part = minus_one.broadcast_mul(&correct_scalars)? ;
+    let minus_one: Tensor = Tensor::new(-1.0f32, device)?;
+    let floor: Tensor = Tensor::new(1e-7f32, device)?;
+    let left_part = minus_one.broadcast_mul(&correct_scalars)?;
     // this feels wrong? Different classes have different weight? Maybe that doesn't matter as we
     // multiply on the left with the class?
     let predicted = predicted.to_dtype(DType::F32)?;
@@ -517,10 +528,8 @@ pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tenso
     // println!("not_zero_count: {not_zero_count:?}");
     // println!("loss: {loss:?}");
     // todo!()
-    Tensor::new(loss,device)
+    Tensor::new(loss, device)
 }
-
-
 
 pub fn fit(
     varmap: &VarMap,
@@ -530,7 +539,6 @@ pub fn fit(
     sample_train: &Vec<SampleTensor>,
     sample_val: &Vec<SampleTensor>,
 ) -> std::result::Result<(), anyhow::Error> {
-
     // Okay, that leaves 2913 images that have a segmentation mask.
     // That's 2913 (images) * 224 (w) * 224 (h) * 3 (channels) * 4 (float) = 1 902 028 800
     // 1.9 GB, that fits in RAM and VRAM, so lets convert all the images to tensors.
@@ -544,9 +552,11 @@ pub fn fit(
     // Collapse all sample_vals to a single tensor.
     let val_input = sample_val.iter().map(|z| &z.image).collect::<Vec<_>>();
     let val_input_tensor = Tensor::stack(&val_input, 0)?;
-    let val_output = sample_val.iter().map(|z| &z.segmentation).collect::<Vec<_>>();
+    let val_output = sample_val
+        .iter()
+        .map(|z| &z.segmentation)
+        .collect::<Vec<_>>();
     let val_output_tensor = Tensor::stack(&val_output, 0)?;
-    
 
     let learning_rate = 1e-4;
     // sgd doesn't support momentum, but it would be 0.9
@@ -557,14 +567,19 @@ pub fn fit(
         let mut sum_loss = 0.0f32;
         // create batches
         for (bi, batch_indices) in shuffled_indices.chunks(MINIBATCH_SIZE).enumerate() {
-            let train_input = batch_indices.iter().map(|i| &sample_train[*i].image).collect::<Vec<_>>();
+            let train_input = batch_indices
+                .iter()
+                .map(|i| &sample_train[*i].image)
+                .collect::<Vec<_>>();
             let train_input_tensor = Tensor::stack(&train_input, 0)?;
-            let train_output = batch_indices.iter().map(|i| &sample_train[*i].segmentation).collect::<Vec<_>>();
+            let train_output = batch_indices
+                .iter()
+                .map(|i| &sample_train[*i].segmentation)
+                .collect::<Vec<_>>();
             let train_output_tensor = Tensor::stack(&train_output, 0)?;
 
             let train_input_tensor = train_input_tensor.to_device(device)?;
             let train_output_tensor = train_output_tensor.to_device(device)?;
-
 
             let logits = fcn.forward_t(&train_input_tensor, true)?;
             let y_hat = logits.argmax_keepdim(1)?; // get maximum in the class dimension
@@ -578,20 +593,25 @@ pub fn fit(
             sgd.backward_step(&batch_loss)?;
             let batch_loss_f32 = batch_loss.to_scalar::<f32>()?;
             sum_loss += batch_loss.to_scalar::<f32>()?;
-            println!("bi: {bi:?} / {}: {batch_indices:?}: {batch_loss_f32}", shuffled_indices.len() / MINIBATCH_SIZE);
-
+            println!(
+                "bi: {bi:?} / {}: {batch_indices:?}: {batch_loss_f32}",
+                shuffled_indices.len() / MINIBATCH_SIZE
+            );
         }
         let avg_loss = sum_loss / ((shuffled_indices.len() / MINIBATCH_SIZE) as f32);
 
-        let test_accuracy= 0.0;
-        println!("{epoch:4} train loss {:8.5} test acc: {:5.2}%", avg_loss, 100.0* test_accuracy);
-
+        let test_accuracy = 0.0;
+        println!(
+            "{epoch:4} train loss {:8.5} test acc: {:5.2}%",
+            avg_loss,
+            100.0 * test_accuracy
+        );
     }
 
     println!("Reached end of train... currently this is sad.");
     Ok(())
 }
-use anyhow::{Context};
+use anyhow::Context;
 pub fn main() -> std::result::Result<(), anyhow::Error> {
     let device_storage = Device::Cpu;
     let device = Device::new_cuda(0)?;
@@ -610,7 +630,12 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     for s in samples {
         if let Some(segmentation) = s.annotation.segmented {
             if segmentation {
-                let name = s.image_path.file_stem().map(|z|z.to_str().map(|z|z.to_owned())).flatten().with_context(|| "failed to convert path")?;
+                let name = s
+                    .image_path
+                    .file_stem()
+                    .map(|z| z.to_str().map(|z| z.to_owned()))
+                    .flatten()
+                    .with_context(|| "failed to convert path")?;
                 if train.contains(&name) {
                     samples_train.push(s);
                 } else if val.contains(&name) {
@@ -620,17 +645,27 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
         }
     }
 
-    println!("Samples train: {}, samples val: {}", samples_train.len(), samples_val.len());
+    println!(
+        "Samples train: {}, samples val: {}",
+        samples_train.len(),
+        samples_val.len()
+    );
 
     println!("Loading train");
-    let tensor_samples_train_results = samples_train.par_iter().map(|s| SampleTensor::load(s.clone(), &device_storage)).collect::<Vec<_>>();
+    let tensor_samples_train_results = samples_train
+        .par_iter()
+        .map(|s| SampleTensor::load(s.clone(), &device_storage))
+        .collect::<Vec<_>>();
     let mut tensor_samples_train = vec![];
     for s in tensor_samples_train_results {
         tensor_samples_train.push(s?);
     }
 
     println!("Loading val");
-    let tensor_samples_val_results = samples_val.par_iter().map(|s| SampleTensor::load(s.clone(), &device_storage)).collect::<Vec<_>>();
+    let tensor_samples_val_results = samples_val
+        .par_iter()
+        .map(|s| SampleTensor::load(s.clone(), &device_storage))
+        .collect::<Vec<_>>();
     let mut tensor_samples_val = vec![];
     for s in tensor_samples_val_results {
         tensor_samples_val.push(s?);
@@ -647,7 +682,14 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     let network = FCN32s::new(vgg16, vs, &device)?;
 
     println!("Starting fit");
-    fit(&varmap, &network, &voc_dir, &device, &tensor_samples_train, &tensor_samples_val)?;
+    fit(
+        &varmap,
+        &network,
+        &voc_dir,
+        &device,
+        &tensor_samples_train,
+        &tensor_samples_val,
+    )?;
     Ok(())
 }
 
@@ -725,7 +767,6 @@ mod test {
         Ok(())
     }
 
-
     #[test]
     fn test_crossentropy() -> Result<()> {
         let device = Device::Cpu;
@@ -742,7 +783,6 @@ mod test {
         let loss_a = loss.to_scalar::<f32>()?;
         println!("loss_a: {loss_a:?}");
 
-        
         let predicted = Tensor::from_slice(&[0u32, 1, 0, 2, 2, 2, 0, 0, 0], (1, 3, 3), &device)?;
         let loss = error_unwrap!(binary_cross_entropy(&predicted, &truth));
         let loss_b = loss.to_scalar::<f32>()?;

@@ -139,7 +139,6 @@ where
     Ok(res)
 }
 
-
 #[macro_export]
 macro_rules! approx_equal {
     ($a:expr, $b: expr, $max_error:expr) => {
