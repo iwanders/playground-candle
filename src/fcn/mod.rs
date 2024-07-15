@@ -2,8 +2,9 @@
 use crate::candle_util::MaxPoolLayer;
 use crate::candle_util::SequentialT;
 // use candle_core::bail;
-use candle_core::{DType, Device, Result, Tensor};
-use candle_nn::{Activation, ConvTranspose2dConfig, VarBuilder, VarMap, Optimizer};
+use candle_core::{DType, Device, Result, Tensor, D};
+use candle_nn::{Activation, ConvTranspose2dConfig, VarBuilder, VarMap, Optimizer, ModuleT};
+use candle_nn::ops::{log_softmax};
 
 use rayon::prelude::*;
 
@@ -11,7 +12,6 @@ use rand::prelude::*;
 use rand_xorshift::XorShiftRng;
 /*
 use candle_core::IndexOp;
-use candle_nn::ops::{log_softmax, softmax};
 use candle_nn::Optimizer;
 use candle_nn::{Activation, Dropout};
 
@@ -125,6 +125,14 @@ impl VGG16 {
         self.network.forward(&x)
     }
 }
+
+impl ModuleT for VGG16 {
+    fn forward_t(&self, x: &Tensor, train: bool) -> Result<Tensor> {
+        let x = x.to_device(&self.device)?;
+        self.network.forward_t(&x, train)
+    }
+}
+
 
 const PASCAL_VOC_CLASSES: usize = 21;
 
@@ -241,6 +249,15 @@ impl FCN32s {
         let x = x.to_device(&self.device)?;
         let z = self.vgg16.forward(&x)?;
         self.network.forward(&z)
+    }
+}
+
+impl ModuleT for FCN32s {
+    fn forward_t(&self, x: &Tensor, train: bool) -> Result<Tensor> {
+        let x = x.to_device(&self.device)?;
+        let z = self.vgg16.forward_t(&x, train)?;
+        self.network.forward_t(&z, train)
+        
     }
 }
 
@@ -457,10 +474,10 @@ pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tenso
     // Can we just drop half of the equation which means that mean(yn * log(xn)) remains?
 
     if truths.dtype() != DType::U32 {
-        candle_core::bail!("truths has wrong type");
+        candle_core::bail!("truths has wrong type, got: {:?}", truths.dtype());
     }
     if predicted.dtype() != DType::U32 {
-        candle_core::bail!("predicted has wrong type");
+        candle_core::bail!("predicted has wrong type, got: {:?}", predicted.dtype());
     }
 
     let device = truths.device();
@@ -517,7 +534,7 @@ pub fn fit(
     let batch_count = sample_train.len() / MINIBATCH_SIZE;
 
     let mut rng = XorShiftRng::seed_from_u64(1);
-    let mut shuffled_indices: Vec<usize> = (0..batch_count).collect();
+    let mut shuffled_indices: Vec<usize> = (0..sample_train.len()).collect();
 
     // Collapse all sample_vals to a single tensor.
     let val_input = sample_val.iter().map(|z| &z.image).collect::<Vec<_>>();
@@ -531,31 +548,36 @@ pub fn fit(
     let mut sgd = candle_nn::SGD::new(varmap.all_vars(), learning_rate)?;
     for epoch in 1..10 {
         shuffled_indices.shuffle(&mut rng);
+
+        let mut sum_loss = 0.0f32;
         // create batches
-        for batch_indices in shuffled_indices.chunks(MINIBATCH_SIZE) {
-            let train_input = sample_train.iter().map(|z| &z.image).collect::<Vec<_>>();
+        for (bi, batch_indices) in shuffled_indices.chunks(MINIBATCH_SIZE).enumerate() {
+            println!("bi: {bi:?}: {batch_indices:?}");
+            let train_input = batch_indices.iter().map(|i| &sample_train[*i].image).collect::<Vec<_>>();
             let train_input_tensor = Tensor::stack(&train_input, 0)?;
-            let train_output = sample_train.iter().map(|z| &z.segmentation).collect::<Vec<_>>();
+            let train_output = batch_indices.iter().map(|i| &sample_train[*i].segmentation).collect::<Vec<_>>();
             let train_output_tensor = Tensor::stack(&train_output, 0)?;
+
+            let logits = fcn.forward_t(&train_input_tensor, true)?;
+            let y_hat = logits.argmax_keepdim(1)?; // get maximum in the class dimension
+            let batch_loss = binary_cross_entropy(&train_output_tensor, &y_hat)?;
+            sgd.backward_step(&batch_loss)?;
+
+            sum_loss += batch_loss.to_scalar::<f32>()?;
+
+
+            use std::{thread, time};
+
+            let ten_millis = time::Duration::from_millis(3000);
+            let now = time::Instant::now();
+
+            thread::sleep(ten_millis);
         }
-        /*
-        let mut sum_loss = 0f32;
-        for idx in shuffled_indices.iter() {
-            let (train_img, train_label) = &mini_batches[*idx];
-            let logits = model.forward_t(&train_img)?;
-            let log_sm = log_softmax(&logits, D::Minus1)?;
-            let loss = loss::nll(&log_sm, &train_label)?;
-            sgd.backward_step(&loss)?;
-            sum_loss += loss.to_vec0::<f32>()?;
-        }
-        let avg_loss = sum_loss / batch_len as f32;
-        let test_accuracy = model.predict(&x_test, &y_test)?;
-        println!(
-            "{epoch:4} train loss {:8.5} test acc: {:5.2}%",
-            avg_loss,
-            100. * test_accuracy
-        );
-        */
+        let avg_loss = sum_loss / ((shuffled_indices.len() / MINIBATCH_SIZE) as f32);
+
+        let test_accuracy= 0.0;
+        println!("{epoch:4} train loss {:8.5} test acc: {:5.2}%", avg_loss, 100.0* test_accuracy);
+
     }
 
     /**/
@@ -563,7 +585,8 @@ pub fn fit(
 }
 use anyhow::{Context};
 pub fn main() -> std::result::Result<(), anyhow::Error> {
-    let device = Device::Cpu;
+    // let device = Device::Cpu;
+    let device = Device::new_cuda(0)?;
 
     let args = std::env::args().collect::<Vec<String>>();
 
@@ -589,17 +612,23 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
         }
     }
 
+    println!("Samples train: {}, samples val: {}", samples_train.len(), samples_val.len());
+
+    println!("Loading train");
     let tensor_samples_train_results = samples_train.par_iter().map(|s| SampleTensor::load(s.clone(), &device)).collect::<Vec<_>>();
     let mut tensor_samples_train = vec![];
     for s in tensor_samples_train_results {
         tensor_samples_train.push(s?);
     }
+
+    println!("Loading val");
     let tensor_samples_val_results = samples_val.par_iter().map(|s| SampleTensor::load(s.clone(), &device)).collect::<Vec<_>>();
     let mut tensor_samples_val = vec![];
     for s in tensor_samples_val_results {
         tensor_samples_val.push(s?);
     }
 
+    println!("Building network");
     let varmap = VarMap::new();
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     let vgg16 = VGG16::new(vs, &device)?;
@@ -609,6 +638,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     let network = FCN32s::new(vgg16, vs, &device)?;
 
+    println!("Starting fit");
     fit(&varmap, &network, &voc_dir, &device, &tensor_samples_train, &tensor_samples_val)?;
     Ok(())
 }
