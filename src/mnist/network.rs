@@ -268,7 +268,9 @@ pub fn fit(
                 let (train_img, train_label) = &mini_batches[*idx];
                 let logits = model.forward_t(&train_img)?;
                 let log_sm = log_softmax(&logits, D::Minus1)?;
+                // println!("log_sm: {log_sm:?}");
                 let loss = loss::nll(&log_sm, &train_label)?;
+                // println!("loss: {loss:?}");
                 opt.backward_step(&loss)?;
                 sum_loss += loss.to_vec0::<f32>()?;
             }
@@ -287,6 +289,7 @@ pub fn fit(
 
 pub type MainResult = anyhow::Result<()>;
 pub fn main() -> MainResult {
+    // cargo r --release -- /media/ivor/volatile/datasets/mnist/
     let args = std::env::args().collect::<Vec<String>>();
     let m = candle_datasets::vision::mnist::load_dir(&args[1])?;
 

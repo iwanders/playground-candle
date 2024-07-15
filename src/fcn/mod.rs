@@ -489,14 +489,30 @@ pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tenso
     //
     // Can we just drop half of the equation which means that mean(yn * log(xn)) remains?
 
+    // Truths are always u32s, they're (batch, 1, 224, 224), of data type u32
+    // Predicted is f32: (batch, 21, 224, 224).
+
+    // So we need to explode the truths to (batch, 21, 224, 224) at data type f32.
+
     if truths.dtype() != DType::U32 {
         candle_core::bail!("truths has wrong type, got: {:?}", truths.dtype());
     }
-    if predicted.dtype() != DType::U32 {
+    if predicted.dtype() != DType::F32 {
         candle_core::bail!("predicted has wrong type, got: {:?}", predicted.dtype());
     }
 
     let device = truths.device();
+
+    // Conver the truths to a f32 thing.
+    // Make a tensor that's full of ones.
+    let ones_truths = Tensor::full(1.0f32, predicted.shape(), device)?.force_contiguous()?;
+    let zeros_truth = Tensor::full(0.0f32, predicted.shape(), device)?.force_contiguous()?;
+    // println!("predicted: {predicted:?}");
+    // println!("truths: {truths:?}");
+    let scatter_truth = truths.repeat((1, predicted.dims()[1], 1, 1))?;
+    let truth_f32s = zeros_truth.scatter_add(&scatter_truth, &ones_truths, 1)?;
+
+
 
     // Truths are already lacking the mask... but was that smart? :/
     // Number of valid pixels is anything that in the truths doesn't have zero.
@@ -505,6 +521,7 @@ pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tenso
     // ne; out comes same shape, but u8, so convert back to u32.
     let not_zero = truths.ne(&zero_truths)?.to_dtype(DType::U32)?;
     let not_zero_count = not_zero.sum_all()?.to_scalar::<u32>()?;
+    /*
 
     // Next, calculate the number of correct scalars.
     let correct_pixels = truths.eq(predicted)?;
@@ -529,6 +546,14 @@ pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tenso
     // println!("loss: {loss:?}");
     // todo!()
     Tensor::new(loss, device)
+    */
+    // let delta = (predicted - truth_f32s)?;
+    // let log_thing = 
+    let minus_one: Tensor = Tensor::new(-1.0f32, device)?;
+    let floor: Tensor = Tensor::new(1e-7f32, device)?;
+    let left = minus_one.broadcast_mul(&truth_f32s)?;
+    let combined = (left * (predicted.broadcast_add(&floor))?.log()?)?;
+    Ok(combined)
 }
 
 pub fn fit(
@@ -543,7 +568,7 @@ pub fn fit(
     // That's 2913 (images) * 224 (w) * 224 (h) * 3 (channels) * 4 (float) = 1 902 028 800
     // 1.9 GB, that fits in RAM and VRAM, so lets convert all the images to tensors.
 
-    const MINIBATCH_SIZE: usize = 20; // from the paper, p6.
+    const MINIBATCH_SIZE: usize = 10; // from the paper, p6.
     let batch_count = sample_train.len() / MINIBATCH_SIZE;
 
     let mut rng = XorShiftRng::seed_from_u64(1);
@@ -582,14 +607,14 @@ pub fn fit(
             let train_output_tensor = train_output_tensor.to_device(device)?;
 
             let logits = fcn.forward_t(&train_input_tensor, true)?;
-            let y_hat = logits.argmax_keepdim(1)?; // get maximum in the class dimension
-            println!("y_hat shape: {:?} t: {:?}", y_hat.shape(), y_hat.dtype());
+            // let y_hat = logits.argmax_keepdim(1)?; // get maximum in the class dimension
+            // println!("y_hat shape: {:?} t: {:?}", logits.shape(), logits.dtype());
             {
-                let img = batch_tensor_to_mask(0, &y_hat)?;
-                img.save(format!("/tmp/y_hat_{epoch}_{bi}.png"))?;
+                // let img = batch_tensor_to_mask(0, &logits)?;
+                // img.save(format!("/tmp/y_hat_{epoch}_{bi}.png"))?;
             }
 
-            let batch_loss = binary_cross_entropy(&y_hat, &train_output_tensor)?;
+            let batch_loss = binary_cross_entropy(&train_output_tensor, &logits)?;
             sgd.backward_step(&batch_loss)?;
             let batch_loss_f32 = batch_loss.to_scalar::<f32>()?;
             sum_loss += batch_loss.to_scalar::<f32>()?;
@@ -619,6 +644,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     let args = std::env::args().collect::<Vec<String>>();
 
     let voc_dir = std::path::PathBuf::from(&args[1]);
+    // let (train, val) = gather_ids(&voc_dir, &["person", "cat", "bicycle", "bird"])?;
     let (train, val) = gather_ids(&voc_dir, &["person", "cat", "bicycle", "bird"])?;
     println!("Train {}, val: {}", train.len(), val.len());
 
@@ -778,13 +804,13 @@ mod test {
 
         let truth = Tensor::from_slice(&[0u32, 1, 0, 2, 2, 2, 0, 0, 0], (1, 3, 3), &device)?;
         // let truth_batch = Tensor::stack(&[&gray, &gray], 0)?;
-        let predicted = Tensor::from_slice(&[0u32, 1, 0, 0, 0, 0, 0, 0, 0], (1, 3, 3), &device)?;
-        let loss = error_unwrap!(binary_cross_entropy(&predicted, &truth));
+        let predicted = Tensor::from_slice(&[0.0f32, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], (1, 3, 3), &device)?;
+        let loss = error_unwrap!(binary_cross_entropy(&truth, &predicted));
         let loss_a = loss.to_scalar::<f32>()?;
         println!("loss_a: {loss_a:?}");
 
-        let predicted = Tensor::from_slice(&[0u32, 1, 0, 2, 2, 2, 0, 0, 0], (1, 3, 3), &device)?;
-        let loss = error_unwrap!(binary_cross_entropy(&predicted, &truth));
+        let predicted = Tensor::from_slice(&[0.0f32, 1.0, 0.0, 2.0, 2.0, 2.0, 0.0, 0.0, 0.0], (1, 3, 3), &device)?;
+        let loss = error_unwrap!(binary_cross_entropy(&truth, &predicted));
         let loss_b = loss.to_scalar::<f32>()?;
         println!("loss_b: {loss_b:?}");
         assert!(loss_b < loss_a);
