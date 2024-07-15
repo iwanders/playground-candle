@@ -552,26 +552,24 @@ pub fn fit(
         let mut sum_loss = 0.0f32;
         // create batches
         for (bi, batch_indices) in shuffled_indices.chunks(MINIBATCH_SIZE).enumerate() {
-            println!("bi: {bi:?}: {batch_indices:?}");
             let train_input = batch_indices.iter().map(|i| &sample_train[*i].image).collect::<Vec<_>>();
             let train_input_tensor = Tensor::stack(&train_input, 0)?;
             let train_output = batch_indices.iter().map(|i| &sample_train[*i].segmentation).collect::<Vec<_>>();
             let train_output_tensor = Tensor::stack(&train_output, 0)?;
 
+            let train_input_tensor = train_input_tensor.to_device(device)?;
+            let train_output_tensor = train_output_tensor.to_device(device)?;
+
+
             let logits = fcn.forward_t(&train_input_tensor, true)?;
             let y_hat = logits.argmax_keepdim(1)?; // get maximum in the class dimension
-            let batch_loss = binary_cross_entropy(&train_output_tensor, &y_hat)?;
+            println!("y_hat shape: {:?} t: {:?}", y_hat.shape(), y_hat.dtype());
+            let batch_loss = binary_cross_entropy(&y_hat, &train_output_tensor)?;
             sgd.backward_step(&batch_loss)?;
-
+            let batch_loss_f32 = batch_loss.to_scalar::<f32>()?;
             sum_loss += batch_loss.to_scalar::<f32>()?;
+            println!("bi: {bi:?} / {}: {batch_indices:?}: {batch_loss_f32}", shuffled_indices.len() / MINIBATCH_SIZE);
 
-
-            use std::{thread, time};
-
-            let ten_millis = time::Duration::from_millis(3000);
-            let now = time::Instant::now();
-
-            thread::sleep(ten_millis);
         }
         let avg_loss = sum_loss / ((shuffled_indices.len() / MINIBATCH_SIZE) as f32);
 
@@ -580,12 +578,12 @@ pub fn fit(
 
     }
 
-    /**/
-    todo!()
+    println!("Reached end of train... currently this is sad.");
+    Ok(())
 }
 use anyhow::{Context};
 pub fn main() -> std::result::Result<(), anyhow::Error> {
-    // let device = Device::Cpu;
+    let device_storage = Device::Cpu;
     let device = Device::new_cuda(0)?;
 
     let args = std::env::args().collect::<Vec<String>>();
@@ -615,14 +613,14 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     println!("Samples train: {}, samples val: {}", samples_train.len(), samples_val.len());
 
     println!("Loading train");
-    let tensor_samples_train_results = samples_train.par_iter().map(|s| SampleTensor::load(s.clone(), &device)).collect::<Vec<_>>();
+    let tensor_samples_train_results = samples_train.par_iter().map(|s| SampleTensor::load(s.clone(), &device_storage)).collect::<Vec<_>>();
     let mut tensor_samples_train = vec![];
     for s in tensor_samples_train_results {
         tensor_samples_train.push(s?);
     }
 
     println!("Loading val");
-    let tensor_samples_val_results = samples_val.par_iter().map(|s| SampleTensor::load(s.clone(), &device)).collect::<Vec<_>>();
+    let tensor_samples_val_results = samples_val.par_iter().map(|s| SampleTensor::load(s.clone(), &device_storage)).collect::<Vec<_>>();
     let mut tensor_samples_val = vec![];
     for s in tensor_samples_val_results {
         tensor_samples_val.push(s?);
