@@ -1,7 +1,7 @@
 pub mod candle_util;
-pub mod mnist;
+// pub mod mnist;
 // pub mod yolo;
-pub mod fcn;
+// pub mod fcn;
 pub mod candle_fix;
 
 pub type MainResult = anyhow::Result<()>;
