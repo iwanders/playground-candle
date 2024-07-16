@@ -510,6 +510,7 @@ pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tenso
     // println!("predicted: {predicted:?}");
     // println!("truths: {truths:?}");
     let scatter_truth = truths.repeat((1, predicted.dims()[1], 1, 1))?;
+    println!("z {:?}", scatter_truth.sum_all()?.to_scalar::<u32>()?);
     let truth_f32s = zeros_truth.scatter_add(&scatter_truth, &ones_truths, 1)?;
 
 
@@ -550,9 +551,11 @@ pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tenso
     // let delta = (predicted - truth_f32s)?;
     // let log_thing = 
     let minus_one: Tensor = Tensor::new(-1.0f32, device)?;
-    let floor: Tensor = Tensor::new(1e-7f32, device)?;
+    let floor: Tensor = Tensor::new(1e-4f32, device)?;
     let left = minus_one.broadcast_mul(&truth_f32s)?;
-    let combined = (left * (predicted.broadcast_add(&floor))?.log()?)?;
+    // let combined = ((left * predicted)?.broadcast_add(&floor))?.log()?;
+    let combined = (left * ((predicted.broadcast_add(&floor))?.log()?))?;
+    println!("combinedz {:?}", combined);
     Ok(combined)
 }
 
@@ -568,7 +571,7 @@ pub fn fit(
     // That's 2913 (images) * 224 (w) * 224 (h) * 3 (channels) * 4 (float) = 1 902 028 800
     // 1.9 GB, that fits in RAM and VRAM, so lets convert all the images to tensors.
 
-    const MINIBATCH_SIZE: usize = 10; // from the paper, p6.
+    const MINIBATCH_SIZE: usize = 10; // 20 from the paper, p6.
     let batch_count = sample_train.len() / MINIBATCH_SIZE;
 
     let mut rng = XorShiftRng::seed_from_u64(1);
@@ -619,8 +622,8 @@ pub fn fit(
             println!("Batch output truth: {train_output_tensor:?}");
             println!("Going into backwards step");
             sgd.backward_step(&batch_loss)?;
-            let batch_loss_f32 = batch_loss.to_scalar::<f32>()?;
-            sum_loss += batch_loss.to_scalar::<f32>()?;
+            let batch_loss_f32 = batch_loss.sum_all()?.to_scalar::<f32>()?;
+            sum_loss += batch_loss_f32;
             println!(
                 "bi: {bi:?} / {}: {batch_indices:?}: {batch_loss_f32}",
                 shuffled_indices.len() / MINIBATCH_SIZE
