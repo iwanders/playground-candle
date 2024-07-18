@@ -31,35 +31,51 @@ impl<'a> std::fmt::Debug for PrintableTensor<'a> {
         let dim_count = self.tensor.dims().len();
         if dim_count == 0 {
             write!(fmt, "∅")?;
-        }
-        if dim_count == 1 {
-            if self.tensor.dtype() == DType::F32 {
-                write!(
-                    fmt,
-                    "{:?}",
-                    self.tensor.to_vec1::<f32>().map_err(|_| std::fmt::Error)?
-                )?;
-            }
-            if self.tensor.dtype() == DType::U32 {
-                write!(
-                    fmt,
-                    "{:?}",
-                    self.tensor.to_vec1::<u32>().map_err(|_| std::fmt::Error)?
-                )?;
-            }
-        }
-        if dim_count == 2 {
+        } else if dim_count == 1 {
+                if self.tensor.dtype() == DType::F32 {
+                    write!(
+                        fmt,
+                        "{:?}",
+                        self.tensor.to_vec1::<f32>().map_err(|_| std::fmt::Error)?
+                    )?;
+                }
+                if self.tensor.dtype() == DType::U32 {
+                    write!(
+                        fmt,
+                        "{:?}",
+                        self.tensor.to_vec1::<u32>().map_err(|_| std::fmt::Error)?
+                    )?;
+                }
+            
+        } else if dim_count == 2 {
             let mut v = fmt.debug_list();
             // let mut b = &mut v;
             for y in 0..self.tensor.dim(0).map_err(|_| std::fmt::Error)? {
                 let r = self.tensor.get(y).map_err(|_| std::fmt::Error)?;
                 // write!(fmt, "{:?}", r.to_vec1::<f32>().map_err(|_| std::fmt::Error)?)?;
                 // v.entry(&format!("{:?}", r.to_vec1::<f32>().map_err(|_| std::fmt::Error)?));
-                v.entry(&format_args!(
-                    "{:?}",
-                    r.to_vec1::<f32>().map_err(|_| std::fmt::Error)?
-                ));
+                if self.tensor.dtype() == DType::F32 {
+                    v.entry(&format_args!(
+                        "{:?}",
+                        r.to_vec1::<f32>().map_err(|_| std::fmt::Error)?
+                    ));
+                }
+                if self.tensor.dtype() == DType::U32 {
+                    v.entry(&format_args!(
+                        "{:?}",
+                        r.to_vec1::<u32>().map_err(|_| std::fmt::Error)?
+                    ));
+                }
             }
+            v.finish()?;
+        } else {
+            let mut v = fmt.debug_struct(&format!("d{dim_count}"));
+            for z in 0..self.tensor.dim(0).map_err(|_| std::fmt::Error)? {
+                let t = self.tensor.get(z).map_err(|_| std::fmt::Error)?;
+                let p = t.p();
+                v.field(&format!("{z}"), &format_args!("{:#?}", p));
+            }
+            println!("finishing");
             v.finish()?;
         }
         Ok(())
