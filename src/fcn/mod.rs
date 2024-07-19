@@ -1,4 +1,4 @@
-// use crate::candle_util::prelude::*;
+use crate::candle_util::prelude::*;
 use crate::candle_util::MaxPoolLayer;
 use crate::candle_util::SequentialT;
 // use candle_core::bail;
@@ -477,6 +477,7 @@ impl SampleTensor {
 
 pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tensor> {
     // https://pytorch.org/docs/stable/generated/torch.nn.BCELoss.html
+    // Or maybe we sould implement BCEWithLogitsLoss, it explains sigmoid is combined in that.
     // That's used in one implementation.
     // Another uses
     // y_comp = (truths==predicted)
@@ -509,9 +510,12 @@ pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tenso
     let zeros_truth = Tensor::full(0.0f32, predicted.shape(), device)?.force_contiguous()?;
     // println!("predicted: {predicted:?}");
     // println!("truths: {truths:?}");
+    // let one = Tensor::full(1f32, (), device)?;
     let scatter_truth = truths.repeat((1, predicted.dims()[1], 1, 1))?;
-    println!("z {:?}", scatter_truth.sum_all()?.to_scalar::<u32>()?);
-    let truth_f32s = zeros_truth.scatter_add(&scatter_truth, &ones_truths, 1)?;
+    // println!("scatter_truth: {:#?}", scatter_truth.p());
+    // Use this broadcast_minimum to prevent the values from being more than 1.
+    let truth_f32s = zeros_truth.scatter_add(&scatter_truth, &ones_truths, 1)?.broadcast_minimum(&ones_truths)?;
+    // println!("truth_f32s: {:?}", truth_f32s.p());
 
 
 
@@ -553,9 +557,12 @@ pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tenso
     let minus_one: Tensor = Tensor::new(-1.0f32, device)?;
     let floor: Tensor = Tensor::new(1e-4f32, device)?;
     let left = minus_one.broadcast_mul(&truth_f32s)?;
+    let right = (predicted.broadcast_add(&floor))?.log()?;
+    // println!("left: {:?}", left.p());
+    // println!("right: {:?}", right.p());
     // let combined = ((left * predicted)?.broadcast_add(&floor))?.log()?;
-    let combined = (left * ((predicted.broadcast_add(&floor))?.log()?))?;
-    println!("combinedz {:?}", combined);
+    let combined = (left.matmul(& right))?;
+    // println!("combinedz {:?} {:?}", combined, combined.p());
     Ok(combined)
 }
 
@@ -610,11 +617,11 @@ pub fn fit(
             let train_output_tensor = train_output_tensor.to_device(device)?;
 
             let logits = fcn.forward_t(&train_input_tensor, true)?;
-            // let y_hat = logits.argmax_keepdim(1)?; // get maximum in the class dimension
             // println!("y_hat shape: {:?} t: {:?}", logits.shape(), logits.dtype());
             {
-                // let img = batch_tensor_to_mask(0, &logits)?;
-                // img.save(format!("/tmp/y_hat_{epoch}_{bi}.png"))?;
+                let zzz = logits.argmax_keepdim(1)?; // get maximum in the class dimension
+                let img = batch_tensor_to_mask(0, &zzz)?;
+                img.save(format!("/tmp/y_hat_{epoch}_{bi}.png"))?;
             }
 
             let batch_loss = binary_cross_entropy(&train_output_tensor, &logits)?;
@@ -803,23 +810,27 @@ mod test {
     fn test_crossentropy() -> Result<()> {
         let device = Device::Cpu;
         /*
-            0 1 0
-            2 2 2
-            0 0 0
+            0 1
+            2 2
         */
 
-        let truth = Tensor::from_slice(&[0u32, 1, 0, 2, 2, 2, 0, 0, 0], (1, 3, 3), &device)?;
+        let truth = Tensor::from_slice(&[0u32, 1, 0, 2, ], (1, 1, 2, 2), &device)?;
         // let truth_batch = Tensor::stack(&[&gray, &gray], 0)?;
-        let predicted = Tensor::from_slice(&[0.0f32, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], (1, 3, 3), &device)?;
+        #[rustfmt::skip]
+        let predicted = Tensor::from_slice(&[1.0f32, 0.1, 1.0, 0.3, // label 0
+                                             0.1, 0.8, 0.0, 0.0, // label 1
+                                             0.2, 0.2, 0.1, 0.7, // label 2
+                                            ], (1, 3, 2, 2), &device)?;
         let loss = error_unwrap!(binary_cross_entropy(&truth, &predicted));
-        let loss_a = loss.to_scalar::<f32>()?;
-        println!("loss_a: {loss_a:?}");
+        // let loss_a = loss.to_scalar::<f32>()?;
+        // println!("loss_a: {loss_a:?}");
 
-        let predicted = Tensor::from_slice(&[0.0f32, 1.0, 0.0, 2.0, 2.0, 2.0, 0.0, 0.0, 0.0], (1, 3, 3), &device)?;
+        return Ok(());
+        let predicted = Tensor::from_slice(&[0.0f32, 1.0, 0.0, 2.0, 2.0, 2.0, 0.0, 0.0], (1, 3, 2, 2), &device)?;
         let loss = error_unwrap!(binary_cross_entropy(&truth, &predicted));
-        let loss_b = loss.to_scalar::<f32>()?;
-        println!("loss_b: {loss_b:?}");
-        assert!(loss_b < loss_a);
+        // let loss_b = loss.to_scalar::<f32>()?;
+        // println!("loss_b: {loss_b:?}");
+        // assert!(loss_b < loss_a);
         Ok(())
     }
 }

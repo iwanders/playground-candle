@@ -75,7 +75,6 @@ impl<'a> std::fmt::Debug for PrintableTensor<'a> {
                 let p = t.p();
                 v.field(&format!("{z}"), &format_args!("{:#?}", p));
             }
-            println!("finishing");
             v.finish()?;
         }
         Ok(())
