@@ -258,6 +258,34 @@ pub fn binary_cross_entropy_logits_loss(input: &Tensor, target: &Tensor) -> cand
 }
 
 
+pub fn c_u32_one_hot(input: &Tensor, max_count: usize) ->  candle_core::Result<Tensor> {
+    if input.dtype() != DType::U32 {
+        candle_core::bail!("input has wrong type, got: {:?}", input.dtype());
+    }
+    // Expected input is: (1, w, h) or (N, 1, w, h)
+    // Onehot will be: (max_count, w, h) or (N, max_count, w, h)
+    // println!("input: {:?}", input.p());
+    let input_rank = input.rank();
+    // println!("input_rank: {}", input_rank);
+
+    let device = input.device();
+
+    let input = input.force_contiguous()?;
+    
+    let one = Tensor::full(1.0f32, input.shape(), &device)?.force_contiguous()?;
+    let zero = Tensor::full(0.0f32, input.shape(), &device)?.force_contiguous()?;
+    if input_rank == 3 {
+        let dims = input.dims();
+        let one_repeated = one.repeat((max_count, 1, 1))?.force_contiguous()?;
+        let zero_repeated = zero.repeat((max_count, 1, 1))?.force_contiguous()?;
+        let r = zero_repeated.scatter_add(&input, &one, 0)?;
+        // println!("r: {:?}", r.p());
+        Ok(r)
+    } else {
+        candle_core::bail!("one hot shape not supported: {:?}", input.shape());
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -389,6 +417,32 @@ mod test {
         println!("loss_a: {loss_a:?}");
         approx_equal!(loss_expected, loss_a, 0.0001);
 
+
+        Ok(())
+    }
+
+
+    #[test]
+    fn test_c_u32_one_hot() -> anyhow::Result<()> {
+        let device = Device::Cpu;
+        let w = Tensor::from_slice(&[1, 1,
+                                     0, 2u32,], (1, 2, 2), &device)?;
+
+        let one_hot = error_unwrap!(c_u32_one_hot(&w, 3));
+        let one_hot_v = one_hot.flatten_all()?.to_vec1::<f32>()?;
+        println!("one_hot: {:?}", one_hot.p());
+
+        let z = Tensor::from_slice(&[0.0, 0.0,
+                                     1.0, 0.0f32,
+                                     1.0, 1.0,
+                                     0.0, 0.0f32,
+                                     0.0, 0.0,
+                                     0.0, 1.0f32,
+                                    ], (3, 2, 2), &device)?;
+        let z_v = z.flatten_all()?.to_vec1::<f32>()?;
+
+        assert_eq!(one_hot.shape(), z.shape());
+        approx_equal_slice!(&z_v, &one_hot_v, 0.02);
 
         Ok(())
     }

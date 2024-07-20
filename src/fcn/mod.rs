@@ -5,7 +5,7 @@ use crate::candle_util::SequentialT;
 use candle_core::{DType, Device, IndexOp, Result, Tensor, D};
 use candle_nn::ops::log_softmax;
 use candle_nn::{Activation, ConvTranspose2dConfig, ModuleT, Optimizer, VarBuilder, VarMap};
-use crate::candle_util::binary_cross_entropy;
+use crate::candle_util::*;
 use rayon::prelude::*;
 
 use rand::prelude::*;
@@ -319,6 +319,7 @@ pub struct SampleTensor {
     pub sample: voc_dataset::Sample,
     pub image: Tensor,
     pub segmentation: Tensor,
+    pub segmentation_one_hot: Tensor,
 }
 
 pub fn rgbf32_to_image(v: &Tensor) -> anyhow::Result<image::Rgb32FImage> {
@@ -433,6 +434,7 @@ pub fn batch_tensor_to_mask(index: usize, x: &Tensor) -> anyhow::Result<image::R
     tensor_to_mask(&z)
 }
 
+
 impl SampleTensor {
     pub fn load(
         sample: voc_dataset::Sample,
@@ -464,6 +466,7 @@ impl SampleTensor {
         // back_to_img.save("/tmp/mask.png")?;
         // let image = Tensor::from_vec(img.into_vec(), (1, 224, 224), device)?;
 
+        let segmentation_one_hot = c_u32_one_hot(&segmentation, CLASSESS.len())?;
         // Next, read the mask from somewhere.
         // let image = Tensor::full(0.5f32, (3, 224, 224), device)?;
         let mask = image.clone();
@@ -471,6 +474,7 @@ impl SampleTensor {
             sample,
             image,
             segmentation,
+            segmentation_one_hot,
         })
     }
 }
@@ -519,7 +523,7 @@ pub fn fit(
             let train_input_tensor = Tensor::stack(&train_input, 0)?;
             let train_output = batch_indices
                 .iter()
-                .map(|i| &sample_train[*i].segmentation)
+                .map(|i| &sample_train[*i].segmentation_one_hot)
                 .collect::<Vec<_>>();
             let train_output_tensor = Tensor::stack(&train_output, 0)?;
 
@@ -529,12 +533,13 @@ pub fn fit(
             let logits = fcn.forward_t(&train_input_tensor, true)?;
             // println!("y_hat shape: {:?} t: {:?}", logits.shape(), logits.dtype());
             {
-                let zzz = logits.argmax_keepdim(1)?; // get maximum in the class dimension
+                let sigm = candle_nn::ops::sigmoid(&logits)?;
+                let zzz = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
                 let img = batch_tensor_to_mask(0, &zzz)?;
                 img.save(format!("/tmp/y_hat_{epoch}_{bi}.png"))?;
             }
 
-            let batch_loss = binary_cross_entropy(&train_output_tensor, &logits)?;
+            let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor)?;
             println!("Batch logits shape: {logits:?}");
             println!("Batch output truth: {train_output_tensor:?}");
             println!("Going into backwards step");
