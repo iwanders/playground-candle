@@ -203,7 +203,7 @@ macro_rules! error_unwrap {
 // pub(crate) use approx_equal;
 // pub(crate) use error_unwrap;
 
-
+/// Binary cross entropy, no reduction, expects data after sigmoid.
 pub fn binary_cross_entropy(input: &Tensor, target: &Tensor) -> candle_core::Result<Tensor> {
     if input.dtype() != DType::F32 {
         candle_core::bail!("input has wrong type, got: {:?}", input.dtype());
@@ -224,12 +224,14 @@ pub fn binary_cross_entropy(input: &Tensor, target: &Tensor) -> candle_core::Res
     Ok(calcfinal)
 }
 
+/// Binary cross entropy, with mean reduction, expects data after sigmoid.
 pub fn binary_cross_entropy_loss(input: &Tensor, target: &Tensor) -> candle_core::Result<Tensor> {
     let r = binary_cross_entropy(input, target)?;
     r.mean_all()
 }
 
 
+/// Binary cross entropy, no reduction, performs sigmoid in computation.
 pub fn binary_cross_entropy_logits(input: &Tensor, target: &Tensor) -> candle_core::Result<Tensor> {
     if input.dtype() != DType::F32 {
         candle_core::bail!("input has wrong type, got: {:?}", input.dtype());
@@ -249,6 +251,7 @@ pub fn binary_cross_entropy_logits(input: &Tensor, target: &Tensor) -> candle_co
     left + right
 }
 
+/// Binary cross entropy, with mean reduction, performs sigmoid in computation.
 pub fn binary_cross_entropy_logits_loss(input: &Tensor, target: &Tensor) -> candle_core::Result<Tensor> {
     let r = binary_cross_entropy_logits(input, target)?;
     r.mean_all()
