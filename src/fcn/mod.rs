@@ -5,7 +5,7 @@ use crate::candle_util::SequentialT;
 use candle_core::{DType, Device, IndexOp, Result, Tensor, D};
 use candle_nn::ops::log_softmax;
 use candle_nn::{Activation, ConvTranspose2dConfig, ModuleT, Optimizer, VarBuilder, VarMap};
-
+use crate::candle_util::binary_cross_entropy;
 use rayon::prelude::*;
 
 use rand::prelude::*;
@@ -475,99 +475,6 @@ impl SampleTensor {
     }
 }
 
-pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tensor> {
-    // https://pytorch.org/docs/stable/generated/torch.nn.BCELoss.html
-    // Or maybe we sould implement BCEWithLogitsLoss, it explains sigmoid is combined in that.
-    // That's used in one implementation.
-    // Another uses
-    // y_comp = (truths==predicted)
-    // nvalid = (truths != 255).sum()
-    // bce = reduce_sum(-y_comp * log(predicted + 1e-7)) / nvalid
-    //
-    // Reading the BCELoss docs;
-    // Oh, that help does explain why it's clamped, which is that + 1e-7 in the 'one'
-    // implementation.
-    //
-    // Can we just drop half of the equation which means that mean(yn * log(xn)) remains?
-
-    // Truths are always u32s, they're (batch, 1, 224, 224), of data type u32
-    // Predicted is f32: (batch, 21, 224, 224).
-
-    // So we need to explode the truths to (batch, 21, 224, 224) at data type f32.
-
-    if truths.dtype() != DType::U32 {
-        candle_core::bail!("truths has wrong type, got: {:?}", truths.dtype());
-    }
-    if predicted.dtype() != DType::F32 {
-        candle_core::bail!("predicted has wrong type, got: {:?}", predicted.dtype());
-    }
-
-    let device = truths.device();
-
-    // Conver the truths to a f32 thing.
-    // Make a tensor that's full of ones.
-    let ones_truths = Tensor::full(1.0f32, predicted.shape(), device)?.force_contiguous()?;
-    let zeros_truth = Tensor::full(0.0f32, predicted.shape(), device)?.force_contiguous()?;
-    // println!("predicted: {predicted:?}");
-    // println!("truths: {truths:?}");
-    // let one = Tensor::full(1f32, (), device)?;
-    let scatter_truth = truths.repeat((1, predicted.dims()[1], 1, 1))?;
-    // println!("scatter_truth: {:#?}", scatter_truth.p());
-    // Use this broadcast_minimum to prevent the values from being more than 1.
-    let truth_f32s = zeros_truth.scatter_add(&scatter_truth, &ones_truths, 1)?.broadcast_minimum(&ones_truths)?;
-    // println!("truth_f32s: {:?}", truth_f32s.p());
-
-
-
-    // Truths are already lacking the mask... but was that smart? :/
-    // Number of valid pixels is anything that in the truths doesn't have zero.
-    // Make a zero vector.
-    let zero_truths = Tensor::full(0u32, truths.shape(), device)?;
-    // ne; out comes same shape, but u8, so convert back to u32.
-    let not_zero = truths.ne(&zero_truths)?.to_dtype(DType::U32)?;
-    let not_zero_count = not_zero.sum_all()?.to_scalar::<u32>()?;
-    /*
-
-    // Next, calculate the number of correct scalars.
-    let correct_pixels = truths.eq(predicted)?;
-    let correct_scalars = correct_pixels.to_dtype(DType::F32)?;
-    // println!("correct_pixels: {correct_pixels:?}");
-
-    let minus_one: Tensor = Tensor::new(-1.0f32, device)?;
-    let floor: Tensor = Tensor::new(1e-7f32, device)?;
-    let left_part = minus_one.broadcast_mul(&correct_scalars)?;
-    // this feels wrong? Different classes have different weight? Maybe that doesn't matter as we
-    // multiply on the left with the class?
-    let predicted = predicted.to_dtype(DType::F32)?;
-    let combined = (left_part * (predicted.broadcast_add(&floor))?.log())?;
-
-    let combined_sum = combined.sum_all()?.to_scalar::<f32>()?;
-    let loss = combined_sum / (not_zero_count as f32);
-
-    // let correct_count = correct_u32s.sum_all()?.to_scalar::<u32>()?;
-
-    // println!("combined: {combined:?}");
-    // println!("not_zero_count: {not_zero_count:?}");
-    // println!("loss: {loss:?}");
-    // todo!()
-    Tensor::new(loss, device)
-    */
-    // let delta = (predicted - truth_f32s)?;
-    // let log_thing = 
-    let minus_one: Tensor = Tensor::new(-1.0f32, device)?;
-    let floor: Tensor = Tensor::new(1e-4f32, device)?;
-    let left = minus_one.broadcast_mul(&truth_f32s)?;
-    let right = (predicted.broadcast_add(&floor))?.log()?;
-    // println!("left: {:?}", left.p());
-    // println!("right: {:?}", right.p());
-    // let combined = ((left * predicted)?.broadcast_add(&floor))?.log()?;
-    let combined = (left.matmul(& right))?;
-    // println!("combinedz {:?} {:?}", combined, combined.p());
-    Ok(combined)
-}
-
-pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tensor> {
-}
 
 pub fn fit(
     varmap: &VarMap,
@@ -809,57 +716,4 @@ mod test {
         Ok(())
     }
 
-    #[test]
-    fn test_crossentropy() -> Result<()> {
-        let device = Device::Cpu;
-
-        /*
-
-            m = nn.Sigmoid()
-            loss = nn.BCELoss()
-            input = tensor([[[[ 2.8929, -1.0923],
-                              [-0.4709, -0.1996]]]], requires_grad=True)
-            target = tensor([[[[ 1.0, 0.5],
-                              [1.0, 0.2]]]], requires_grad=True)
-            output = loss(m(input), target)
-            print(f"BCELoss           : {output}")
-
-            criterion = torch.nn.BCEWithLogitsLoss()
-            z = criterion(input, target)
-            print(f"BCELoss with logit: {z}")
-
-            # s(x) = 1.0 / (1 + e^-x) = e^-x / (1 + e^x)
-            loss = (torch.clamp(input, 0) - input * target  + torch.log(1 + torch.exp(-torch.abs(input))))
-            print(f"loss: {loss}")
-            loss = loss.mean()
-            print(f"loss mean:          {loss}")
-
-            BCELoss           : 0.6209125518798828
-            BCELoss with logit: 0.6209125518798828
-            loss: tensor([[[[0.0539, 0.8354],
-                            [0.9561, 0.6382]]]], grad_fn=<AddBackward0>)
-
-            loss mean:          0.6209125518798828
-
-            > https://pytorch.org/docs/stable/generated/torch.nn.BCEWithLogitsLoss.html
-            > This loss combines a Sigmoid layer and the BCELoss in one single class.
-            > This version is more numerically stable than using a plain Sigmoid followed by a
-            > BCELoss as, by combining the operations into one layer, we take advantage of the
-            > log-sum-exp trick for numerical stability.
-
-        */
-
-
-        let truth = Tensor::from_slice(&[1.0, 0.5,
-                                         1.0, 0.2f32], (1, 1, 2, 2), &device)?;
-
-        #[rustfmt::skip]
-        let predicted = Tensor::from_slice(&[2.8929, -1.0923,
-                                            -0.4709, -0.1996f32], (1, 1, 2, 2), &device)?;
-        let loss = error_unwrap!(binary_cross_entropy(&truth, &predicted));
-        let loss_a = loss.to_scalar::<f32>()?;
-        println!("loss_a: {loss_a:?}");
-
-        Ok(())
-    }
 }
