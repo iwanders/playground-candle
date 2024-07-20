@@ -566,6 +566,9 @@ pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tenso
     Ok(combined)
 }
 
+pub fn binary_cross_entropy(truths: &Tensor, predicted: &Tensor) -> Result<Tensor> {
+}
+
 pub fn fit(
     varmap: &VarMap,
     fcn: &FCN32s,
@@ -809,28 +812,54 @@ mod test {
     #[test]
     fn test_crossentropy() -> Result<()> {
         let device = Device::Cpu;
+
         /*
-            0 1
-            2 2
+
+            m = nn.Sigmoid()
+            loss = nn.BCELoss()
+            input = tensor([[[[ 2.8929, -1.0923],
+                              [-0.4709, -0.1996]]]], requires_grad=True)
+            target = tensor([[[[ 1.0, 0.5],
+                              [1.0, 0.2]]]], requires_grad=True)
+            output = loss(m(input), target)
+            print(f"BCELoss           : {output}")
+
+            criterion = torch.nn.BCEWithLogitsLoss()
+            z = criterion(input, target)
+            print(f"BCELoss with logit: {z}")
+
+            # s(x) = 1.0 / (1 + e^-x) = e^-x / (1 + e^x)
+            loss = (torch.clamp(input, 0) - input * target  + torch.log(1 + torch.exp(-torch.abs(input))))
+            print(f"loss: {loss}")
+            loss = loss.mean()
+            print(f"loss mean:          {loss}")
+
+            BCELoss           : 0.6209125518798828
+            BCELoss with logit: 0.6209125518798828
+            loss: tensor([[[[0.0539, 0.8354],
+                            [0.9561, 0.6382]]]], grad_fn=<AddBackward0>)
+
+            loss mean:          0.6209125518798828
+
+            > https://pytorch.org/docs/stable/generated/torch.nn.BCEWithLogitsLoss.html
+            > This loss combines a Sigmoid layer and the BCELoss in one single class.
+            > This version is more numerically stable than using a plain Sigmoid followed by a
+            > BCELoss as, by combining the operations into one layer, we take advantage of the
+            > log-sum-exp trick for numerical stability.
+
         */
 
-        let truth = Tensor::from_slice(&[0u32, 1, 0, 2, ], (1, 1, 2, 2), &device)?;
-        // let truth_batch = Tensor::stack(&[&gray, &gray], 0)?;
-        #[rustfmt::skip]
-        let predicted = Tensor::from_slice(&[1.0f32, 0.1, 1.0, 0.3, // label 0
-                                             0.1, 0.8, 0.0, 0.0, // label 1
-                                             0.2, 0.2, 0.1, 0.7, // label 2
-                                            ], (1, 3, 2, 2), &device)?;
-        let loss = error_unwrap!(binary_cross_entropy(&truth, &predicted));
-        // let loss_a = loss.to_scalar::<f32>()?;
-        // println!("loss_a: {loss_a:?}");
 
-        return Ok(());
-        let predicted = Tensor::from_slice(&[0.0f32, 1.0, 0.0, 2.0, 2.0, 2.0, 0.0, 0.0], (1, 3, 2, 2), &device)?;
+        let truth = Tensor::from_slice(&[1.0, 0.5,
+                                         1.0, 0.2f32], (1, 1, 2, 2), &device)?;
+
+        #[rustfmt::skip]
+        let predicted = Tensor::from_slice(&[2.8929, -1.0923,
+                                            -0.4709, -0.1996f32], (1, 1, 2, 2), &device)?;
         let loss = error_unwrap!(binary_cross_entropy(&truth, &predicted));
-        // let loss_b = loss.to_scalar::<f32>()?;
-        // println!("loss_b: {loss_b:?}");
-        // assert!(loss_b < loss_a);
+        let loss_a = loss.to_scalar::<f32>()?;
+        println!("loss_a: {loss_a:?}");
+
         Ok(())
     }
 }
