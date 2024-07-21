@@ -1,5 +1,5 @@
 // use candle_core::IndexOp;
-use candle_core::{DType, ModuleT, Tensor, Device};
+use candle_core::{DType, Device, ModuleT, Tensor};
 
 pub mod prelude {
     pub use super::PrintableTensorTrait;
@@ -32,21 +32,20 @@ impl<'a> std::fmt::Debug for PrintableTensor<'a> {
         if dim_count == 0 {
             write!(fmt, "∅")?;
         } else if dim_count == 1 {
-                if self.tensor.dtype() == DType::F32 {
-                    write!(
-                        fmt,
-                        "{:?}",
-                        self.tensor.to_vec1::<f32>().map_err(|_| std::fmt::Error)?
-                    )?;
-                }
-                if self.tensor.dtype() == DType::U32 {
-                    write!(
-                        fmt,
-                        "{:?}",
-                        self.tensor.to_vec1::<u32>().map_err(|_| std::fmt::Error)?
-                    )?;
-                }
-            
+            if self.tensor.dtype() == DType::F32 {
+                write!(
+                    fmt,
+                    "{:?}",
+                    self.tensor.to_vec1::<f32>().map_err(|_| std::fmt::Error)?
+                )?;
+            }
+            if self.tensor.dtype() == DType::U32 {
+                write!(
+                    fmt,
+                    "{:?}",
+                    self.tensor.to_vec1::<u32>().map_err(|_| std::fmt::Error)?
+                )?;
+            }
         } else if dim_count == 2 {
             let mut v = fmt.debug_list();
             // let mut b = &mut v;
@@ -154,8 +153,6 @@ where
     Ok(res)
 }
 
-
-
 #[macro_export]
 macro_rules! approx_equal {
     ($a:expr, $b: expr, $max_error:expr) => {
@@ -180,7 +177,7 @@ macro_rules! approx_equal_slice {
                     max_error = $max_error
                 );
             }
-            
+
         }
     }
 }
@@ -213,13 +210,14 @@ pub fn binary_cross_entropy(input: &Tensor, target: &Tensor) -> candle_core::Res
     }
     let device = target.device();
     // -(target * (torch.clamp(input, 0) + eps).log() + (1. - target) * (1. - torch.clamp(input, 0) + eps).log())
-    // left: target * (torch.clamp(input, 0) + eps).log() 
+    // left: target * (torch.clamp(input, 0) + eps).log()
     // right (1. - target) * (1. - torch.clamp(input, 0) + eps).log()
     let eps = Tensor::full(1e-10f32, (), &device)?;
     let one = Tensor::full(1.0f32, (), &device)?;
     let input_clamp = input.maximum(0.0)?;
     let left = (target * (input_clamp.broadcast_add(&eps)?).log()?)?;
-    let right = (one.broadcast_sub(&target) * ((one.broadcast_sub(&input_clamp)?.broadcast_add(&eps)?).log()?))?;
+    let right = (one.broadcast_sub(&target)
+        * ((one.broadcast_sub(&input_clamp)?.broadcast_add(&eps)?).log()?))?;
     let calcfinal = ((left + right)?).neg()?;
     Ok(calcfinal)
 }
@@ -229,7 +227,6 @@ pub fn binary_cross_entropy_loss(input: &Tensor, target: &Tensor) -> candle_core
     let r = binary_cross_entropy(input, target)?;
     r.mean_all()
 }
-
 
 /// Binary cross entropy, no reduction, performs sigmoid in computation.
 pub fn binary_cross_entropy_logits(input: &Tensor, target: &Tensor) -> candle_core::Result<Tensor> {
@@ -242,7 +239,7 @@ pub fn binary_cross_entropy_logits(input: &Tensor, target: &Tensor) -> candle_co
     let device = target.device();
 
     // (torch.clamp(input, 0) - input * target  + torch.log(1 + torch.exp(-torch.abs(input))))
-    // left: torch.clamp(input, 0) - input * target  
+    // left: torch.clamp(input, 0) - input * target
     // right: torch.log(1 + torch.exp(-torch.abs(input)))
     let one = Tensor::full(1.0f32, (), &device)?;
     let input_clamp = input.maximum(0.0)?;
@@ -252,13 +249,15 @@ pub fn binary_cross_entropy_logits(input: &Tensor, target: &Tensor) -> candle_co
 }
 
 /// Binary cross entropy, with mean reduction, performs sigmoid in computation.
-pub fn binary_cross_entropy_logits_loss(input: &Tensor, target: &Tensor) -> candle_core::Result<Tensor> {
+pub fn binary_cross_entropy_logits_loss(
+    input: &Tensor,
+    target: &Tensor,
+) -> candle_core::Result<Tensor> {
     let r = binary_cross_entropy_logits(input, target)?;
     r.mean_all()
 }
 
-
-pub fn c_u32_one_hot(input: &Tensor, max_count: usize) ->  candle_core::Result<Tensor> {
+pub fn c_u32_one_hot(input: &Tensor, max_count: usize) -> candle_core::Result<Tensor> {
     if input.dtype() != DType::U32 {
         candle_core::bail!("input has wrong type, got: {:?}", input.dtype());
     }
@@ -271,7 +270,7 @@ pub fn c_u32_one_hot(input: &Tensor, max_count: usize) ->  candle_core::Result<T
     let device = input.device();
 
     let input = input.force_contiguous()?;
-    
+
     let one = Tensor::full(1.0f32, input.shape(), &device)?.force_contiguous()?;
     let zero = Tensor::full(0.0f32, input.shape(), &device)?.force_contiguous()?;
     if input_rank == 3 {
@@ -311,7 +310,6 @@ mod test {
 
         Ok(())
     }
-
 
     #[test]
     fn test_crossentropy() -> anyhow::Result<()> {
@@ -380,7 +378,6 @@ mod test {
 
         let loss_expected = 0.6209125518798828f32;
 
-
         #[rustfmt::skip]
         let target = Tensor::from_slice(&[1.0, 0.5,
                                           1.0, 0.2f32], (1, 1, 2, 2), &device)?;
@@ -389,7 +386,6 @@ mod test {
         let input = Tensor::from_slice(&[2.8929, -1.0923,
                                         -0.4709, -0.1996f32], (1, 1, 2, 2), &device)?;
         let input_s = candle_nn::ops::sigmoid(&input)?;
-
 
         // Finally, we go into the unit tests, first for normal bce;
         let loss = error_unwrap!(binary_cross_entropy(&input_s, &target));
@@ -417,28 +413,25 @@ mod test {
         println!("loss_a: {loss_a:?}");
         approx_equal!(loss_expected, loss_a, 0.0001);
 
-
         Ok(())
     }
-
 
     #[test]
     fn test_c_u32_one_hot() -> anyhow::Result<()> {
         let device = Device::Cpu;
-        let w = Tensor::from_slice(&[1, 1,
-                                     0, 2u32,], (1, 2, 2), &device)?;
+        let w = Tensor::from_slice(&[1, 1, 0, 2u32], (1, 2, 2), &device)?;
 
         let one_hot = error_unwrap!(c_u32_one_hot(&w, 3));
         let one_hot_v = one_hot.flatten_all()?.to_vec1::<f32>()?;
         println!("one_hot: {:?}", one_hot.p());
 
-        let z = Tensor::from_slice(&[0.0, 0.0,
-                                     1.0, 0.0f32,
-                                     1.0, 1.0,
-                                     0.0, 0.0f32,
-                                     0.0, 0.0,
-                                     0.0, 1.0f32,
-                                    ], (3, 2, 2), &device)?;
+        let z = Tensor::from_slice(
+            &[
+                0.0, 0.0, 1.0, 0.0f32, 1.0, 1.0, 0.0, 0.0f32, 0.0, 0.0, 0.0, 1.0f32,
+            ],
+            (3, 2, 2),
+            &device,
+        )?;
         let z_v = z.flatten_all()?.to_vec1::<f32>()?;
 
         assert_eq!(one_hot.shape(), z.shape());

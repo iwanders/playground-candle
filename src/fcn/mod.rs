@@ -2,10 +2,10 @@ use crate::candle_util::prelude::*;
 use crate::candle_util::MaxPoolLayer;
 use crate::candle_util::SequentialT;
 // use candle_core::bail;
+use crate::candle_util::*;
 use candle_core::{DType, Device, IndexOp, Result, Tensor, D};
 use candle_nn::ops::log_softmax;
 use candle_nn::{Activation, ConvTranspose2dConfig, ModuleT, Optimizer, VarBuilder, VarMap};
-use crate::candle_util::*;
 use rayon::prelude::*;
 
 use rand::prelude::*;
@@ -434,7 +434,6 @@ pub fn batch_tensor_to_mask(index: usize, x: &Tensor) -> anyhow::Result<image::R
     tensor_to_mask(&z)
 }
 
-
 impl SampleTensor {
     pub fn load(
         sample: voc_dataset::Sample,
@@ -478,7 +477,6 @@ impl SampleTensor {
         })
     }
 }
-
 
 pub fn fit(
     varmap: &VarMap,
@@ -540,14 +538,14 @@ pub fn fit(
             }
 
             let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor)?;
-            println!("Batch logits shape: {logits:?}");
-            println!("Batch output truth: {train_output_tensor:?}");
-            println!("Going into backwards step");
+            // println!("Batch logits shape: {logits:?}");
+            // println!("Batch output truth: {train_output_tensor:?}");
+            // println!("Going into backwards step");
             sgd.backward_step(&batch_loss)?;
             let batch_loss_f32 = batch_loss.sum_all()?.to_scalar::<f32>()?;
             sum_loss += batch_loss_f32;
             println!(
-                "bi: {bi:?} / {}: {batch_indices:?}: {batch_loss_f32}",
+                "   bi: {bi: >2?} / {}: {batch_loss_f32}",
                 shuffled_indices.len() / MINIBATCH_SIZE
             );
         }
@@ -564,16 +562,36 @@ pub fn fit(
     println!("Reached end of train... currently this is sad.");
     Ok(())
 }
-use anyhow::Context;
-pub fn main() -> std::result::Result<(), anyhow::Error> {
+
+use clap::{Args, Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+#[command(propagate_version = true)]
+struct Cli {
+    data_path: String,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Args)]
+struct FitStruct {
+    name: Option<String>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    Fit(FitStruct),
+}
+
+pub fn create_data(
+    voc_dir: &std::path::Path,
+    categories: &[&str],
+) -> std::result::Result<(Vec<SampleTensor>, Vec<SampleTensor>), anyhow::Error> {
     let device_storage = Device::Cpu;
-    let device = Device::new_cuda(0)?;
 
-    let args = std::env::args().collect::<Vec<String>>();
-
-    let voc_dir = std::path::PathBuf::from(&args[1]);
-    // let (train, val) = gather_ids(&voc_dir, &["person", "cat", "bicycle", "bird"])?;
-    let (train, val) = gather_ids(&voc_dir, &["person", "cat", "bicycle", "bird"])?;
+    let (train, val) = gather_ids(&voc_dir, categories)?;
     println!("Train {}, val: {}", train.len(), val.len());
 
     let samples = voc_dataset::load(&voc_dir)?;
@@ -624,6 +642,32 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     for s in tensor_samples_val_results {
         tensor_samples_val.push(s?);
     }
+
+    Ok((tensor_samples_train, tensor_samples_val))
+}
+
+use anyhow::Context;
+pub fn main() -> std::result::Result<(), anyhow::Error> {
+    /*
+    let cli = Cli::parse();
+
+    // You can check for the existence of subcommands, and if found use their
+    // matches just as you would the top level cmd
+    match &cli.command {
+        Commands::Fit(name) => {
+            // println!("'myapp add' was used, name is: {:?}", name.name);
+        }
+    }
+    */
+
+    let device_storage = Device::Cpu;
+    let device = Device::new_cuda(0)?;
+
+    let args = std::env::args().collect::<Vec<String>>();
+
+    let voc_dir = std::path::PathBuf::from(&args[1]);
+    let (tensor_samples_train, tensor_samples_val) =
+        create_data(&voc_dir, &["person", "cat", "bicycle", "bird"])?;
 
     println!("Building network");
     let varmap = VarMap::new();
@@ -720,5 +764,4 @@ mod test {
 
         Ok(())
     }
-
 }
