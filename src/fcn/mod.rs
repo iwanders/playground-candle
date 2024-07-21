@@ -10,6 +10,10 @@ use rayon::prelude::*;
 
 use rand::prelude::*;
 use rand_xorshift::XorShiftRng;
+
+
+use clap::{Args, Parser, Subcommand};
+use anyhow::Context;
 /*
 use candle_core::IndexOp;
 use candle_nn::Optimizer;
@@ -481,10 +485,10 @@ impl SampleTensor {
 pub fn fit(
     varmap: &VarMap,
     fcn: &FCN32s,
-    path: &std::path::Path,
     device: &Device,
     sample_train: &Vec<SampleTensor>,
     sample_val: &Vec<SampleTensor>,
+    settings: &FitSettings,
 ) -> std::result::Result<(), anyhow::Error> {
     // Okay, that leaves 2913 images that have a segmentation mask.
     // That's 2913 (images) * 224 (w) * 224 (h) * 3 (channels) * 4 (float) = 1 902 028 800
@@ -505,7 +509,7 @@ pub fn fit(
         .collect::<Vec<_>>();
     let val_output_tensor = Tensor::stack(&val_output, 0)?;
 
-    let learning_rate = 1e-4;
+    let learning_rate = settings.learning_rate;
     // sgd doesn't support momentum, but it would be 0.9
     let mut sgd = candle_nn::SGD::new(varmap.all_vars(), learning_rate)?;
     for epoch in 1..10 {
@@ -561,28 +565,6 @@ pub fn fit(
 
     println!("Reached end of train... currently this is sad.");
     Ok(())
-}
-
-use clap::{Args, Parser, Subcommand};
-
-#[derive(Parser)]
-#[command(version, about, long_about = None)]
-#[command(propagate_version = true)]
-struct Cli {
-    data_path: String,
-
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Args)]
-struct FitStruct {
-    name: Option<String>,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    Fit(FitStruct),
 }
 
 pub fn create_data(
@@ -646,48 +628,63 @@ pub fn create_data(
     Ok((tensor_samples_train, tensor_samples_val))
 }
 
-use anyhow::Context;
+
+
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+#[command(propagate_version = true)]
+struct Cli {
+    data_path: std::path::PathBuf,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Args)]
+pub struct FitSettings {
+    #[arg(default_value="1e-4")]
+    learning_rate: f64,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    Fit(FitSettings),
+}
+
+
 pub fn main() -> std::result::Result<(), anyhow::Error> {
-    /*
-    let cli = Cli::parse();
-
-    // You can check for the existence of subcommands, and if found use their
-    // matches just as you would the top level cmd
-    match &cli.command {
-        Commands::Fit(name) => {
-            // println!("'myapp add' was used, name is: {:?}", name.name);
-        }
-    }
-    */
-
     let device_storage = Device::Cpu;
     let device = Device::new_cuda(0)?;
 
-    let args = std::env::args().collect::<Vec<String>>();
-
-    let voc_dir = std::path::PathBuf::from(&args[1]);
-    let (tensor_samples_train, tensor_samples_val) =
-        create_data(&voc_dir, &["person", "cat", "bicycle", "bird"])?;
 
     println!("Building network");
     let varmap = VarMap::new();
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     let vgg16 = VGG16::new(vs, &device)?;
 
-    // let vgg16 = error_unwrap!(vgg16);
-
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     let network = FCN32s::new(vgg16, vs, &device)?;
 
-    println!("Starting fit");
-    fit(
-        &varmap,
-        &network,
-        &voc_dir,
-        &device,
-        &tensor_samples_train,
-        &tensor_samples_val,
-    )?;
+    let cli = Cli::parse();
+
+    match &cli.command {
+        Commands::Fit(s) => {
+            let (tensor_samples_train, tensor_samples_val) =
+                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
+
+            println!("Starting fit");
+            fit(
+                &varmap,
+                &network,
+                &device,
+                &tensor_samples_train,
+                &tensor_samples_val,
+                &s,
+            )?;
+        }
+    }
+
     Ok(())
 }
 
