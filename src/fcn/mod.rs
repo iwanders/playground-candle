@@ -533,13 +533,15 @@ pub fn fit(
 
     let mut rng = XorShiftRng::seed_from_u64(1);
     let mut shuffled_indices: Vec<usize> = (0..sample_train.len()).collect();
-
+    for _ in 1..settings.epoch {
+        shuffled_indices.shuffle(&mut rng);
+    }
     println!("Fitting with {settings:#?}");
 
     // sgd doesn't support momentum, but it would be 0.9
     let mut sgd = candle_nn::SGD::new(varmap.all_vars(), settings.learning_rate)?;
-    for epoch in 1..settings.max_epochs.unwrap_or(usize::MAX) {
-        if epoch.rem_euclid(settings.save_interval) == 0 {
+    for epoch in settings.epoch..settings.max_epochs.unwrap_or(usize::MAX) {
+        if epoch != settings.epoch && epoch.rem_euclid(settings.save_interval) == 0 {
             // Save the checkpoint.
             let mut output_path = settings.save_path.clone();
             output_path.push(format!("fcn_{epoch}_lr{lr}.safetensors", lr=settings.learning_rate));
@@ -699,6 +701,14 @@ struct Cli {
 
 #[derive(Args, Debug, Clone)]
 pub struct FitSettings {
+    #[arg(long)]
+    /// The checkpoint file to load as initialisation
+    load: Option<std::path::PathBuf>,
+
+    #[arg(short)]
+    #[arg(default_value="1")]
+    /// The start epoch of this run
+    epoch: usize,
 
     #[arg(long)]
     #[arg(default_value="/tmp/")]
@@ -707,7 +717,7 @@ pub struct FitSettings {
 
     #[arg(long)]
     #[arg(default_value="1")]
-    /// Save the checkpiont every save_interval epochs during training.
+    /// Save the checkpoint every save_interval epochs during training.
     save_interval: usize,
 
     #[arg(short, long)]
@@ -733,7 +743,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     let device = Device::new_cuda(0)?;
 
     println!("Building network");
-    let varmap = VarMap::new();
+    let mut varmap = VarMap::new();
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     let vgg16 = VGG16::new(vs, &device)?;
 
@@ -744,6 +754,10 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
 
     match &cli.command {
         Commands::Fit(s) => {
+            if let Some(v) = &s.load {
+                varmap.load(&v)?;
+            }
+
             let (tensor_samples_train, tensor_samples_val) =
                 create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
 
