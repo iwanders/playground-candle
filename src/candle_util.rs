@@ -80,6 +80,7 @@ impl<'a> std::fmt::Debug for PrintableTensor<'a> {
     }
 }
 
+
 /// A sequential struct that holds ModuleT instead of Module such that it can be used for training.
 pub struct SequentialT {
     layers: Vec<Box<dyn ModuleT>>,
@@ -152,6 +153,29 @@ where
     }
     Ok(res)
 }
+
+pub trait LoadInto {
+    fn load_into<P: AsRef<std::path::Path>>(&self, path: P) -> candle_core::Result<()>;
+}
+impl LoadInto for candle_nn::VarMap {
+    fn load_into<P: AsRef<std::path::Path>>(&self, path: P) -> candle_core::Result<()> {
+        let path = path.as_ref();
+        let file_data = unsafe { candle_core::safetensors::MmapedSafetensors::new(path)? };
+        let mut tensor_data = self.data().lock().unwrap();
+        let keys = file_data.tensors().iter().map(|(n,_)|  n).cloned().collect::<Vec<_>>();
+        for (name, var) in tensor_data.iter_mut() {
+            if keys.contains(name) {
+                let data = file_data.load(name, var.device())?;
+                if let Err(err) = var.set(&data) {
+                    candle_core::bail!("error setting {name} using data from {path:?}: {err}",)
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+
 
 #[macro_export]
 macro_rules! approx_equal {

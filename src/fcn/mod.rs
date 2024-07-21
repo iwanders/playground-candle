@@ -705,6 +705,10 @@ pub struct FitSettings {
     /// The checkpoint file to load as initialisation
     load: Option<std::path::PathBuf>,
 
+    #[arg(long)]
+    /// The vgg file to load as initialisation
+    vgg_load: Option<std::path::PathBuf>,
+
     #[arg(short)]
     #[arg(default_value="1")]
     /// The start epoch of this run
@@ -733,9 +737,15 @@ pub struct FitSettings {
     max_epochs: Option<usize>,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct PrintArgs {
+    load: std::path::PathBuf,
+}
+
 #[derive(Subcommand)]
 enum Commands {
     Fit(FitSettings),
+    Print(PrintArgs),
 }
 
 
@@ -743,7 +753,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     let device = Device::new_cuda(0)?;
 
     println!("Building network");
-    let mut varmap = VarMap::new();
+    let varmap = VarMap::new();
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     let vgg16 = VGG16::new(vs, &device)?;
 
@@ -755,8 +765,13 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     match &cli.command {
         Commands::Fit(s) => {
             if let Some(v) = &s.load {
-                varmap.load(&v)?;
+                varmap.load_into(&v)?;
             }
+
+            if let Some(v) = &s.vgg_load {
+                varmap.load_into(&v)?;
+            }
+
 
             let (tensor_samples_train, tensor_samples_val) =
                 create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
@@ -770,6 +785,13 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                 &tensor_samples_val,
                 &s,
             )?;
+        }
+        Commands::Print(p) => {
+            let device = Device::Cpu;
+            let z = load_from_safetensors(&p.load, &device)?;
+            for k in z.keys() {
+                println!("{k}");
+            }
         }
     }
 
