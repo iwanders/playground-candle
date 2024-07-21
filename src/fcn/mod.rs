@@ -543,11 +543,11 @@ pub fn fit(
     let learning_rate = settings.learning_rate;
     // sgd doesn't support momentum, but it would be 0.9
     let mut sgd = candle_nn::SGD::new(varmap.all_vars(), learning_rate)?;
-    for epoch in 1..10 {
+    for epoch in 1..settings.max_epochs.unwrap_or(usize::MAX) {
         shuffled_indices.shuffle(&mut rng);
 
         let mut sum_loss = 0.0f32;
-        // create batches
+        // Train with batches
         for (bi, batch_indices) in shuffled_indices.chunks(MINIBATCH_SIZE).enumerate() {
             let (train_input_tensor, train_output_tensor) = collect_minibatch_input_output(&sample_train, &batch_indices, device, Segmentation::OneHot)?;
             let logits = fcn.forward_t(&train_input_tensor, true)?;
@@ -578,7 +578,7 @@ pub fn fit(
         let avg_loss = sum_loss / (batch_count as f32);
 
 
-        // Forward pass with the validation test.
+        // Validate, also in batches to avoid vram limits.
         let mut correct_pixels = 0;
         let mut pixel_count = 0;
         let sample_val_indices = (0..sample_val.len()).collect::<Vec<usize>>();
@@ -699,6 +699,10 @@ pub struct FitSettings {
     #[arg(long)]
     /// There's a lot of validation data, if set this limits it to n batches.
     validation_batch_limit: Option<usize>,
+
+    #[arg(long)]
+    /// Limit the number of epochs, default unlimited
+    max_epochs: Option<usize>,
 }
 
 #[derive(Subcommand)]
