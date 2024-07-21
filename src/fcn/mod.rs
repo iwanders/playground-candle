@@ -557,7 +557,7 @@ pub fn fit(
             let logits = fcn.forward_t(&train_input_tensor, true)?;
 
             // Dump an image that was trained on.
-            {
+            if settings.save_train_mask {
                 // https://github.com/huggingface/candle/blob/2489a606fe1a66519da37e4237907926c1ee48a7/candle-examples/examples/vgg/main.rs#L58-L60
                 // Should this be softmax?
                 let sigm = candle_nn::ops::sigmoid(&logits)?;
@@ -591,7 +591,8 @@ pub fn fit(
             let logits_val = fcn.forward_t(&val_input_tensor, false)?;
             let sigm = candle_nn::ops::sigmoid(&logits_val)?;
             let classified_pixels = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
-            {
+
+            if settings.save_val_mask {
                 let img = batch_tensor_to_mask(0, &classified_pixels)?;
                 let img_id = &sample_val[batch_indices[0]].name;
                 img.save(format!("/tmp/val_{epoch:0>5}_{img_id}.png"))?;
@@ -735,6 +736,18 @@ pub struct FitSettings {
     #[arg(long)]
     /// Limit the number of epochs, default unlimited
     max_epochs: Option<usize>,
+
+    #[clap(long, action = clap::ArgAction::SetTrue,
+        default_missing_value("true"),
+        default_value("false"))]
+    /// Whether or not to save the first training mask to disk.
+    save_train_mask: bool,
+
+    #[clap(long, action = clap::ArgAction::SetTrue,
+        default_missing_value("true"),
+        default_value("false"))]
+    /// Whether or not to save the first evaluation mask to disk.
+    save_val_mask: bool,
 }
 
 #[derive(Args, Debug, Clone)]
