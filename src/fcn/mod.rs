@@ -528,21 +528,10 @@ pub fn fit(
     let mut rng = XorShiftRng::seed_from_u64(1);
     let mut shuffled_indices: Vec<usize> = (0..sample_train.len()).collect();
 
-    // Collapse all sample_vals to a single tensor.
-    /*
-    let val_input = sample_val.iter().map(|z| &z.image).collect::<Vec<_>>();
-    let val_input_tensor = Tensor::stack(&val_input, 0)?;
-    let val_input_tensor = val_input_tensor.detach();
-    let val_output = sample_val
-        .iter()
-        .map(|z| &z.segmentation)
-        .collect::<Vec<_>>();
-    let val_output_tensor = Tensor::stack(&val_output, 0)?;
+    println!("Fitting with {settings:#?}");
 
-    */
-    let learning_rate = settings.learning_rate;
     // sgd doesn't support momentum, but it would be 0.9
-    let mut sgd = candle_nn::SGD::new(varmap.all_vars(), learning_rate)?;
+    let mut sgd = candle_nn::SGD::new(varmap.all_vars(), settings.learning_rate)?;
     for epoch in 1..settings.max_epochs.unwrap_or(usize::MAX) {
         shuffled_indices.shuffle(&mut rng);
 
@@ -559,7 +548,9 @@ pub fn fit(
                 let sigm = candle_nn::ops::sigmoid(&logits)?;
                 let zzz = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
                 let img = batch_tensor_to_mask(0, &zzz)?;
-                img.save(format!("/tmp/y_hat_{epoch}_{bi}.png"))?;
+                let img_id = sample_train[batch_indices[0]].sample.image_path.file_stem().with_context(|| "no file stem")?;
+                let img_id = img_id.to_str().with_context(|| "failed to convert to str")?;
+                img.save(format!("/tmp/train_{epoch}_{img_id}.png"))?;
             }
 
             let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor)?;
@@ -573,7 +564,6 @@ pub fn fit(
                 "      bi: {bi: >2?} / {}: {batch_loss_f32}",
                 shuffled_indices.len() / MINIBATCH_SIZE
             );
-            break;
         }
         let avg_loss = sum_loss / (batch_count as f32);
 
@@ -587,6 +577,12 @@ pub fn fit(
             let logits_val = fcn.forward_t(&val_input_tensor, false)?;
             let sigm = candle_nn::ops::sigmoid(&logits_val)?;
             let classified_pixels = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
+            {
+                let img = batch_tensor_to_mask(0, &classified_pixels)?;
+                let img_id = sample_val[batch_indices[0]].sample.image_path.file_stem().with_context(|| "no file stem")?;
+                let img_id = img_id.to_str().with_context(|| "failed to convert to str")?;
+                img.save(format!("/tmp/val_{epoch:0>5}_{img_id}.png"))?;
+            }
             // classified pixels is now (B, 1, 224, 224) u32
             // Validation tensor is also (B, 1, 224, 224) u32, so we can equal them.
             let eq = classified_pixels.eq(&val_output_tensor)?;
@@ -690,7 +686,7 @@ struct Cli {
     command: Commands,
 }
 
-#[derive(Args)]
+#[derive(Args, Debug, Clone)]
 pub struct FitSettings {
     #[arg(short, long)]
     #[arg(default_value="1e-4")]
