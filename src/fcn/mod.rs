@@ -324,6 +324,7 @@ pub struct SampleTensor {
     pub image: Tensor,
     pub segmentation: Tensor,
     pub segmentation_one_hot: Tensor,
+    pub name: String,
 }
 
 pub fn rgbf32_to_image(v: &Tensor) -> anyhow::Result<image::Rgb32FImage> {
@@ -475,9 +476,14 @@ impl SampleTensor {
         // Next, read the mask from somewhere.
         // let image = Tensor::full(0.5f32, (3, 224, 224), device)?;
         // let mask = image.clone();
+
+        let img_id = sample.image_path.file_stem().with_context(|| "no file stem")?;
+        let name = img_id.to_str().with_context(|| "failed to convert to str")?.to_owned();
+
         Ok(Self {
             sample,
             image,
+            name,
             segmentation,
             segmentation_one_hot,
         })
@@ -533,6 +539,13 @@ pub fn fit(
     // sgd doesn't support momentum, but it would be 0.9
     let mut sgd = candle_nn::SGD::new(varmap.all_vars(), settings.learning_rate)?;
     for epoch in 1..settings.max_epochs.unwrap_or(usize::MAX) {
+        if epoch.rem_euclid(settings.save_interval) == 0 {
+            // Save the checkpoint.
+            let mut output_path = settings.save_path.clone();
+            output_path.push(format!("fcn_{epoch}_lr{lr}.safetensors", lr=settings.learning_rate));
+            varmap.save(&output_path)?;
+        }
+
         shuffled_indices.shuffle(&mut rng);
 
         let mut sum_loss = 0.0f32;
@@ -548,8 +561,7 @@ pub fn fit(
                 let sigm = candle_nn::ops::sigmoid(&logits)?;
                 let zzz = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
                 let img = batch_tensor_to_mask(0, &zzz)?;
-                let img_id = sample_train[batch_indices[0]].sample.image_path.file_stem().with_context(|| "no file stem")?;
-                let img_id = img_id.to_str().with_context(|| "failed to convert to str")?;
+                let img_id = &sample_train[batch_indices[0]].name;
                 img.save(format!("/tmp/train_{epoch}_{img_id}.png"))?;
             }
 
@@ -579,8 +591,7 @@ pub fn fit(
             let classified_pixels = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
             {
                 let img = batch_tensor_to_mask(0, &classified_pixels)?;
-                let img_id = sample_val[batch_indices[0]].sample.image_path.file_stem().with_context(|| "no file stem")?;
-                let img_id = img_id.to_str().with_context(|| "failed to convert to str")?;
+                let img_id = &sample_val[batch_indices[0]].name;
                 img.save(format!("/tmp/val_{epoch:0>5}_{img_id}.png"))?;
             }
             // classified pixels is now (B, 1, 224, 224) u32
@@ -688,6 +699,17 @@ struct Cli {
 
 #[derive(Args, Debug, Clone)]
 pub struct FitSettings {
+
+    #[arg(long)]
+    #[arg(default_value="/tmp/")]
+    /// The directory into which to store checkpoints during training
+    save_path: std::path::PathBuf,
+
+    #[arg(long)]
+    #[arg(default_value="1")]
+    /// Save the checkpiont every save_interval epochs during training.
+    save_interval: usize,
+
     #[arg(short, long)]
     #[arg(default_value="1e-4")]
     learning_rate: f64,
