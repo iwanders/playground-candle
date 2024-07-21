@@ -1,5 +1,5 @@
 // use candle_core::IndexOp;
-use candle_core::{DType, Device, ModuleT, Tensor};
+use candle_core::{DType, ModuleT, Tensor};
 
 pub mod prelude {
     pub use super::PrintableTensorTrait;
@@ -167,6 +167,8 @@ macro_rules! approx_equal {
         }
     };
 }
+
+#[macro_export]
 macro_rules! approx_equal_slice {
     ($a:expr, $b: expr, $max_error:expr) => {
         for (i, (a_v, b_v)) in $a.iter().zip($b.iter()).enumerate() {
@@ -196,9 +198,10 @@ macro_rules! error_unwrap {
     };
 }
 
-// https://stackoverflow.com/a/31749071  export the macro local to this file into the module.
-// pub(crate) use approx_equal;
-// pub(crate) use error_unwrap;
+
+pub use approx_equal;
+pub use approx_equal_slice;
+pub use error_unwrap;
 
 /// Binary cross entropy, no reduction, expects data after sigmoid.
 pub fn binary_cross_entropy(input: &Tensor, target: &Tensor) -> candle_core::Result<Tensor> {
@@ -274,8 +277,6 @@ pub fn c_u32_one_hot(input: &Tensor, max_count: usize) -> candle_core::Result<Te
     let one = Tensor::full(1.0f32, input.shape(), &device)?.force_contiguous()?;
     let zero = Tensor::full(0.0f32, input.shape(), &device)?.force_contiguous()?;
     if input_rank == 3 {
-        let dims = input.dims();
-        let one_repeated = one.repeat((max_count, 1, 1))?.force_contiguous()?;
         let zero_repeated = zero.repeat((max_count, 1, 1))?.force_contiguous()?;
         let r = zero_repeated.scatter_add(&input, &one, 0)?;
         // println!("r: {:?}", r.p());
@@ -288,9 +289,9 @@ pub fn c_u32_one_hot(input: &Tensor, max_count: usize) -> candle_core::Result<Te
 #[cfg(test)]
 mod test {
     use super::*;
+    use candle_core::{Device::Cpu, Tensor};
     #[test]
     fn test_candle_print() -> anyhow::Result<()> {
-        use candle_core::{Device::Cpu, Tensor};
         use candle_nn::{Linear, Module};
 
         let w = Tensor::new(&[[1f32, 2.], [3., 4.], [5., 6.]], &Cpu)?;

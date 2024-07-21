@@ -1,10 +1,10 @@
-use crate::candle_util::prelude::*;
+
 use crate::candle_util::MaxPoolLayer;
 use crate::candle_util::SequentialT;
 // use candle_core::bail;
 use crate::candle_util::*;
-use candle_core::{DType, Device, IndexOp, Result, Tensor, D};
-use candle_nn::ops::log_softmax;
+use candle_core::{DType, Device, IndexOp, Result, Tensor};
+// use candle_nn::ops::log_softmax;
 use candle_nn::{Activation, ConvTranspose2dConfig, ModuleT, Optimizer, VarBuilder, VarMap};
 use rayon::prelude::*;
 
@@ -295,13 +295,13 @@ pub fn gather_ids(
     ),
     anyhow::Error,
 > {
-    let mut seg_dir = path.to_owned().join("ImageSets/Segmentation");
+    let seg_dir = path.to_owned().join("ImageSets/Segmentation");
 
     let train_ids = lines_from_file(&seg_dir.join("train.txt"))?;
     let val_ids = lines_from_file(&seg_dir.join("val.txt"))?;
     // println!("val_ids: {val_ids:?}");
 
-    let mut main_dir = path.to_owned().join("ImageSets/Main");
+    let main_dir = path.to_owned().join("ImageSets/Main");
 
     let mut collected_train: std::collections::HashSet<String> = Default::default();
     let mut collected_val: std::collections::HashSet<String> = Default::default();
@@ -336,7 +336,7 @@ pub fn rgbf32_to_image(v: &Tensor) -> anyhow::Result<image::Rgb32FImage> {
 }
 pub fn img_tensor_to_png(v: &Tensor, path: &str) -> std::result::Result<(), anyhow::Error> {
     let back_img = rgbf32_to_image(v)?;
-    let r = image::DynamicImage::ImageRgb32F(back_img)
+    let _r = image::DynamicImage::ImageRgb32F(back_img)
         .to_rgb8()
         .save(path)?;
     Ok(())
@@ -434,7 +434,7 @@ pub fn tensor_to_mask(x: &Tensor) -> anyhow::Result<image::RgbImage> {
 }
 
 pub fn batch_tensor_to_mask(index: usize, x: &Tensor) -> anyhow::Result<image::RgbImage> {
-    let z = x.i(0)?;
+    let z = x.i(index)?;
     tensor_to_mask(&z)
 }
 
@@ -465,14 +465,16 @@ impl SampleTensor {
         let img = img.resize_exact(224, 224, image::imageops::FilterType::Nearest);
         // let img = img.to_rgb32f();
         let segmentation = mask_to_tensor(&img.to_rgb8(), device)?;
-        let back_to_img = tensor_to_mask(&segmentation)?;
-        // back_to_img.save("/tmp/mask.png")?;
+        if false {
+            let back_to_img = tensor_to_mask(&segmentation)?;
+            back_to_img.save("/tmp/mask.png")?;
+        }
         // let image = Tensor::from_vec(img.into_vec(), (1, 224, 224), device)?;
 
         let segmentation_one_hot = c_u32_one_hot(&segmentation, CLASSESS.len())?;
         // Next, read the mask from somewhere.
         // let image = Tensor::full(0.5f32, (3, 224, 224), device)?;
-        let mask = image.clone();
+        // let mask = image.clone();
         Ok(Self {
             sample,
             image,
@@ -481,6 +483,32 @@ impl SampleTensor {
         })
     }
 }
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+pub enum Segmentation{
+    OneHot,
+    Class
+}
+pub fn collect_minibatch_input_output(input: &[SampleTensor], batch_indices: &[usize], device: &Device, seg: Segmentation) -> anyhow::Result<(Tensor, Tensor)> {
+    let train_input = batch_indices
+        .iter()
+        .map(|i| &input[*i].image)
+        .collect::<Vec<_>>();
+    let train_input_tensor = Tensor::stack(&train_input, 0)?;
+    let train_output = batch_indices
+        .iter()
+        .map(|i| if seg == Segmentation::OneHot {
+            &input[*i].segmentation_one_hot
+        } else {
+            &input[*i].segmentation
+        })
+        .collect::<Vec<_>>();
+    let train_output_tensor = Tensor::stack(&train_output, 0)?;
+
+    let train_input_tensor = train_input_tensor.to_device(device)?;
+    let train_output_tensor = train_output_tensor.to_device(device)?;
+    Ok((train_input_tensor, train_output_tensor))
+}
+
 
 pub fn fit(
     varmap: &VarMap,
@@ -501,14 +529,17 @@ pub fn fit(
     let mut shuffled_indices: Vec<usize> = (0..sample_train.len()).collect();
 
     // Collapse all sample_vals to a single tensor.
+    /*
     let val_input = sample_val.iter().map(|z| &z.image).collect::<Vec<_>>();
     let val_input_tensor = Tensor::stack(&val_input, 0)?;
+    let val_input_tensor = val_input_tensor.detach();
     let val_output = sample_val
         .iter()
         .map(|z| &z.segmentation)
         .collect::<Vec<_>>();
     let val_output_tensor = Tensor::stack(&val_output, 0)?;
 
+    */
     let learning_rate = settings.learning_rate;
     // sgd doesn't support momentum, but it would be 0.9
     let mut sgd = candle_nn::SGD::new(varmap.all_vars(), learning_rate)?;
@@ -518,23 +549,13 @@ pub fn fit(
         let mut sum_loss = 0.0f32;
         // create batches
         for (bi, batch_indices) in shuffled_indices.chunks(MINIBATCH_SIZE).enumerate() {
-            let train_input = batch_indices
-                .iter()
-                .map(|i| &sample_train[*i].image)
-                .collect::<Vec<_>>();
-            let train_input_tensor = Tensor::stack(&train_input, 0)?;
-            let train_output = batch_indices
-                .iter()
-                .map(|i| &sample_train[*i].segmentation_one_hot)
-                .collect::<Vec<_>>();
-            let train_output_tensor = Tensor::stack(&train_output, 0)?;
-
-            let train_input_tensor = train_input_tensor.to_device(device)?;
-            let train_output_tensor = train_output_tensor.to_device(device)?;
-
+            let (train_input_tensor, train_output_tensor) = collect_minibatch_input_output(&sample_train, &batch_indices, device, Segmentation::OneHot)?;
             let logits = fcn.forward_t(&train_input_tensor, true)?;
-            // println!("y_hat shape: {:?} t: {:?}", logits.shape(), logits.dtype());
+
+            // Dump an image that was trained on.
             {
+                // https://github.com/huggingface/candle/blob/2489a606fe1a66519da37e4237907926c1ee48a7/candle-examples/examples/vgg/main.rs#L58-L60
+                // Should this be softmax?
                 let sigm = candle_nn::ops::sigmoid(&logits)?;
                 let zzz = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
                 let img = batch_tensor_to_mask(0, &zzz)?;
@@ -549,13 +570,41 @@ pub fn fit(
             let batch_loss_f32 = batch_loss.sum_all()?.to_scalar::<f32>()?;
             sum_loss += batch_loss_f32;
             println!(
-                "   bi: {bi: >2?} / {}: {batch_loss_f32}",
+                "      bi: {bi: >2?} / {}: {batch_loss_f32}",
                 shuffled_indices.len() / MINIBATCH_SIZE
             );
+            break;
         }
-        let avg_loss = sum_loss / ((shuffled_indices.len() / MINIBATCH_SIZE) as f32);
+        let avg_loss = sum_loss / (batch_count as f32);
 
-        let test_accuracy = 0.0;
+
+        // Forward pass with the validation test.
+        let mut correct_pixels = 0;
+        let mut pixel_count = 0;
+        let sample_val_indices = (0..sample_val.len()).collect::<Vec<usize>>();
+        for (bi, batch_indices) in sample_val_indices.chunks(MINIBATCH_SIZE).enumerate() {
+            let (val_input_tensor, val_output_tensor) = collect_minibatch_input_output(&sample_val, &batch_indices, device, Segmentation::Class)?;
+            let logits_val = fcn.forward_t(&val_input_tensor, false)?;
+            let sigm = candle_nn::ops::sigmoid(&logits_val)?;
+            let classified_pixels = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
+            // classified pixels is now (B, 1, 224, 224) u32
+            // Validation tensor is also (B, 1, 224, 224) u32, so we can equal them.
+            let eq = classified_pixels.eq(&val_output_tensor)?;
+            let eq = eq.to_dtype(DType::U32)?;  // eq returns u8, so change that back to u32.
+            // Accuracy is number of correct pixels.
+            let correct = eq.sum_all()?;
+            correct_pixels += correct.to_scalar::<u32>()?;
+            // Right now we're counting black / no label as well... in the paper that's not what
+            // they do, they ignore no label.
+            pixel_count += eq.elem_count();
+
+            if bi >= settings.validation_batch_limit.unwrap_or(usize::MAX) {
+                break
+            }
+        }
+
+        let test_accuracy = (correct_pixels as f64) / (pixel_count as f64);
+        
         println!(
             "{epoch:4} train loss {:8.5} test acc: {:5.2}%",
             avg_loss,
@@ -643,8 +692,13 @@ struct Cli {
 
 #[derive(Args)]
 pub struct FitSettings {
+    #[arg(short, long)]
     #[arg(default_value="1e-4")]
     learning_rate: f64,
+
+    #[arg(long)]
+    /// There's a lot of validation data, if set this limits it to n batches.
+    validation_batch_limit: Option<usize>,
 }
 
 #[derive(Subcommand)]
@@ -654,9 +708,7 @@ enum Commands {
 
 
 pub fn main() -> std::result::Result<(), anyhow::Error> {
-    let device_storage = Device::Cpu;
     let device = Device::new_cuda(0)?;
-
 
     println!("Building network");
     let varmap = VarMap::new();
