@@ -328,7 +328,6 @@ pub struct SampleTensor {
 }
 
 pub fn rgbf32_to_image(v: &Tensor) -> anyhow::Result<image::Rgb32FImage> {
-    // image is 28x28, input tensor is 1x784.
     let w = v.dims()[1] as u32;
     let h = v.dims()[2] as u32;
     let img = image::Rgb32FImage::from_vec(w, h, v.flatten_all()?.to_vec1()?)
@@ -566,7 +565,8 @@ pub fn fit(
                 let img_id = &sample_train[batch_indices[0]].name;
                 img.save(format!("/tmp/train_{epoch}_{img_id}.png"))?;
             }
-
+            // let logits = candle_nn::ops::softmax(&logits, 1)?;
+            // let batch_loss = binary_cross_entropy_loss(&logits, &train_output_tensor)?;
             let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor)?;
             // println!("Batch logits shape: {logits:?}");
             // println!("Batch output truth: {train_output_tensor:?}");
@@ -759,6 +759,7 @@ pub struct PrintArgs {
 enum Commands {
     Fit(FitSettings),
     Print(PrintArgs),
+    VerifyData,
 }
 
 
@@ -806,6 +807,45 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                 println!("{k}");
             }
         }
+        Commands::VerifyData => {
+            let (tensor_samples_train, tensor_samples_val) =
+                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
+            let _ = tensor_samples_val;
+
+            let sample_indices = [0, 50, 100, 200];
+
+            for s in sample_indices {
+                use std::io::prelude::*;
+                let s = &tensor_samples_train[s];
+                let name = &s.name;
+
+                let mut file = std::fs::File::create(format!("/tmp/{name}.txt"))?;
+                file.write_all(format!("name: {name}\n").as_bytes())?;
+
+                let back_to_img = tensor_to_mask(&s.segmentation)?;
+                file.write_all(format!("segmentation.shape: {:?}\n", s.segmentation.shape()).as_bytes())?;
+                back_to_img.save(format!("/tmp/{name}_segmentation_to_img.png"))?;
+                img_tensor_to_png(&s.image, &format!("/tmp/{name}_img.png"))?;
+                file.write_all(format!("image.shape: {:?}\n", s.image.shape()).as_bytes())?;
+
+                // Collect all masks that exist.
+                let mut labels = std::collections::HashSet::new();
+                for v in s.segmentation.flatten_all()?.to_vec1::<u32>()? {
+                    labels.insert(v);
+                }
+                let mask_str = labels.iter().map(|x| format!("{x}")).collect::<Vec<_>>().join(" ");
+                file.write_all(format!("masks: {mask_str}").as_bytes())?;
+
+                let one_hot = &s.segmentation_one_hot;
+                file.write_all(format!("one_hot.shape: {:?}\n", s.segmentation_one_hot.shape()).as_bytes())?;
+                
+                for i in 0..one_hot.dims()[0] {
+                    let binary_mask = one_hot.i(i)?;
+                    let binary_mask_3ch = binary_mask.repeat((3, 1, 1))?;
+                    img_tensor_to_png(&binary_mask_3ch, &format!("/tmp/{name}_channel_{i}.png"))?;
+                }
+            }
+        },
     }
 
     Ok(())
