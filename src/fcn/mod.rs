@@ -8,6 +8,8 @@ use candle_core::{DType, Device, IndexOp, Result, Tensor};
 use candle_nn::{Activation, ConvTranspose2dConfig, ModuleT, Optimizer, VarBuilder, VarMap};
 use rayon::prelude::*;
 
+use std::io::prelude::*;
+
 use rand::prelude::*;
 use rand_xorshift::XorShiftRng;
 
@@ -337,6 +339,18 @@ pub fn rgbf32_to_image(v: &Tensor) -> anyhow::Result<image::Rgb32FImage> {
 pub fn img_tensor_to_png(v: &Tensor, path: &str) -> std::result::Result<(), anyhow::Error> {
     let back_img = rgbf32_to_image(v)?;
     let _r = image::DynamicImage::ImageRgb32F(back_img)
+        .to_rgb8()
+        .save(path)?;
+    Ok(())
+}
+
+pub fn one_hot_to_png(v: &Tensor, path: &str) -> std::result::Result<(), anyhow::Error> {
+    let w = v.dims()[0] as u32;
+    let h = v.dims()[1] as u32;
+    let vu8 = v.flatten_all()?.to_vec1::<f32>()?.drain(..).map(|x| (x * 255.0) as u8).collect::<Vec<_>>();
+    let img = image::GrayImage::from_vec(w, h, vu8).with_context(|| "buffer to small")?;
+
+    let _r = image::DynamicImage::ImageLuma8(img)
         .to_rgb8()
         .save(path)?;
     Ok(())
@@ -815,7 +829,6 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
             let sample_indices = [0, 50, 100, 200];
 
             for s in sample_indices {
-                use std::io::prelude::*;
                 let s = &tensor_samples_train[s];
                 let name = &s.name;
 
@@ -834,15 +847,39 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                     labels.insert(v);
                 }
                 let mask_str = labels.iter().map(|x| format!("{x}")).collect::<Vec<_>>().join(" ");
-                file.write_all(format!("masks: {mask_str}").as_bytes())?;
+                file.write_all(format!("masks: {mask_str}\n").as_bytes())?;
 
                 let one_hot = &s.segmentation_one_hot;
                 file.write_all(format!("one_hot.shape: {:?}\n", s.segmentation_one_hot.shape()).as_bytes())?;
                 
                 for i in 0..one_hot.dims()[0] {
                     let binary_mask = one_hot.i(i)?;
-                    let binary_mask_3ch = binary_mask.repeat((3, 1, 1))?;
-                    img_tensor_to_png(&binary_mask_3ch, &format!("/tmp/{name}_channel_{i}.png"))?;
+                    if i == 0 {
+                        file.write_all(format!("one_hot.i(i).shape: {:?}, type: {:?}\n", binary_mask.shape(), binary_mask.dtype()).as_bytes())?;
+                    }
+
+                    // let binary_mask_3ch = Tensor::stack(&[&binary_mask, &binary_mask, &binary_mask], 0)?;
+                    // file.write_all(format!("binary_mask_3ch.shape: {:?}, type {:?}\n", binary_mask_3ch.shape(), binary_mask_3ch.dtype()).as_bytes())?;
+                    // img_tensor_to_png(&binary_mask_3ch, &format!("/tmp/{name}_channel_{i}_stack.png"))?;
+
+
+                    one_hot_to_png(&binary_mask, &format!("/tmp/{name}_channel_{i}_binary_mask.png"))?;
+                }
+            }
+
+            let (input, output) = collect_minibatch_input_output(&tensor_samples_train, &sample_indices, &Device::Cpu, Segmentation::OneHot)?;
+            for (i, s) in sample_indices.iter().enumerate() {
+                let s = &tensor_samples_train[*s];
+                let name = &s.name;
+                let mut file = std::fs::File::create(format!("/tmp/{name}_batch.txt"))?;
+                // grab from input;
+                let img_from_batch = input.i(i)?;
+                file.write_all(format!("img_from_batch.shape: {:?}\n", img_from_batch.shape()).as_bytes())?;
+                img_tensor_to_png(&s.image, &format!("/tmp/{name}_img_batch.png"))?;
+                let one_hot_from_batch = output.i(i)?;
+                for o in 0..one_hot_from_batch.dims()[0] {
+                    let binary_mask = one_hot_from_batch.i(o)?;
+                    one_hot_to_png(&binary_mask, &format!("/tmp/{name}_channel_{o}_binary_mask_batch.png"))?;
                 }
             }
         },
