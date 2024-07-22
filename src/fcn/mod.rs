@@ -863,7 +863,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                     }
                 }
 
-                let (input, output) = collect_minibatch_input_output(&tensor_samples_train, &sample_indices, &Device::Cpu, Segmentation::OneHot)?;
+                let (input, output) = collect_minibatch_input_output(&samples, &sample_indices, &Device::Cpu, Segmentation::OneHot)?;
                 for (i, s) in sample_indices.iter().enumerate() {
                     let s = &samples[*s];
                     let name = &s.name;
