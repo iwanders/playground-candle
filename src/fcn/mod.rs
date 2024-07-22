@@ -848,7 +848,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                     for v in s.segmentation.flatten_all()?.to_vec1::<u32>()? {
                         labels.insert(v);
                     }
-                    let mask_str = labels.iter().map(|x| format!("{x}")).collect::<Vec<_>>().join(" ");
+                    let mask_str = labels.iter().map(|x| format!("{x}({})", CLASSESS[*x as usize])).collect::<Vec<_>>().join(" ");
                     file.write_all(format!("masks: {mask_str}\n").as_bytes())?;
 
                     let one_hot = &s.segmentation_one_hot;
