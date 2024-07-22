@@ -824,62 +824,59 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
         Commands::VerifyData => {
             let (tensor_samples_train, tensor_samples_val) =
                 create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
-            let _ = tensor_samples_val;
 
             let sample_indices = [0, 50, 100, 200];
 
-            for s in sample_indices {
-                let s = &tensor_samples_train[s];
-                let name = &s.name;
+            let categories = [("train", &tensor_samples_train), ("val", &tensor_samples_val)];
 
-                let mut file = std::fs::File::create(format!("/tmp/{name}.txt"))?;
-                file.write_all(format!("name: {name}\n").as_bytes())?;
+            for (cat_name, samples) in categories {
+                for s in sample_indices {
+                    let s = &samples[s];
+                    let name = &s.name;
 
-                let back_to_img = tensor_to_mask(&s.segmentation)?;
-                file.write_all(format!("segmentation.shape: {:?}\n", s.segmentation.shape()).as_bytes())?;
-                back_to_img.save(format!("/tmp/{name}_segmentation_to_img.png"))?;
-                img_tensor_to_png(&s.image, &format!("/tmp/{name}_img.png"))?;
-                file.write_all(format!("image.shape: {:?}\n", s.image.shape()).as_bytes())?;
+                    let mut file = std::fs::File::create(format!("/tmp/{cat_name}_{name}.txt"))?;
+                    file.write_all(format!("name: {name}\n").as_bytes())?;
 
-                // Collect all masks that exist.
-                let mut labels = std::collections::HashSet::new();
-                for v in s.segmentation.flatten_all()?.to_vec1::<u32>()? {
-                    labels.insert(v);
-                }
-                let mask_str = labels.iter().map(|x| format!("{x}")).collect::<Vec<_>>().join(" ");
-                file.write_all(format!("masks: {mask_str}\n").as_bytes())?;
+                    let back_to_img = tensor_to_mask(&s.segmentation)?;
+                    file.write_all(format!("segmentation.shape: {:?}\n", s.segmentation.shape()).as_bytes())?;
+                    back_to_img.save(format!("/tmp/{cat_name}_{name}_segmentation_to_img.png"))?;
+                    img_tensor_to_png(&s.image, &format!("/tmp/{cat_name}_{name}_img.png"))?;
+                    file.write_all(format!("image.shape: {:?}\n", s.image.shape()).as_bytes())?;
 
-                let one_hot = &s.segmentation_one_hot;
-                file.write_all(format!("one_hot.shape: {:?}\n", s.segmentation_one_hot.shape()).as_bytes())?;
-                
-                for i in 0..one_hot.dims()[0] {
-                    let binary_mask = one_hot.i(i)?;
-                    if i == 0 {
-                        file.write_all(format!("one_hot.i(i).shape: {:?}, type: {:?}\n", binary_mask.shape(), binary_mask.dtype()).as_bytes())?;
+                    // Collect all masks that exist.
+                    let mut labels = std::collections::HashSet::new();
+                    for v in s.segmentation.flatten_all()?.to_vec1::<u32>()? {
+                        labels.insert(v);
                     }
+                    let mask_str = labels.iter().map(|x| format!("{x}")).collect::<Vec<_>>().join(" ");
+                    file.write_all(format!("masks: {mask_str}\n").as_bytes())?;
 
-                    // let binary_mask_3ch = Tensor::stack(&[&binary_mask, &binary_mask, &binary_mask], 0)?;
-                    // file.write_all(format!("binary_mask_3ch.shape: {:?}, type {:?}\n", binary_mask_3ch.shape(), binary_mask_3ch.dtype()).as_bytes())?;
-                    // img_tensor_to_png(&binary_mask_3ch, &format!("/tmp/{name}_channel_{i}_stack.png"))?;
-
-
-                    one_hot_to_png(&binary_mask, &format!("/tmp/{name}_channel_{i}_binary_mask.png"))?;
+                    let one_hot = &s.segmentation_one_hot;
+                    file.write_all(format!("one_hot.shape: {:?}\n", s.segmentation_one_hot.shape()).as_bytes())?;
+                    
+                    for i in 0..one_hot.dims()[0] {
+                        let binary_mask = one_hot.i(i)?;
+                        if i == 0 {
+                            file.write_all(format!("one_hot.i(i).shape: {:?}, type: {:?}\n", binary_mask.shape(), binary_mask.dtype()).as_bytes())?;
+                        }
+                        one_hot_to_png(&binary_mask, &format!("/tmp/{cat_name}_{name}_channel_{i}_binary_mask.png"))?;
+                    }
                 }
-            }
 
-            let (input, output) = collect_minibatch_input_output(&tensor_samples_train, &sample_indices, &Device::Cpu, Segmentation::OneHot)?;
-            for (i, s) in sample_indices.iter().enumerate() {
-                let s = &tensor_samples_train[*s];
-                let name = &s.name;
-                let mut file = std::fs::File::create(format!("/tmp/{name}_batch.txt"))?;
-                // grab from input;
-                let img_from_batch = input.i(i)?;
-                file.write_all(format!("img_from_batch.shape: {:?}\n", img_from_batch.shape()).as_bytes())?;
-                img_tensor_to_png(&s.image, &format!("/tmp/{name}_img_batch.png"))?;
-                let one_hot_from_batch = output.i(i)?;
-                for o in 0..one_hot_from_batch.dims()[0] {
-                    let binary_mask = one_hot_from_batch.i(o)?;
-                    one_hot_to_png(&binary_mask, &format!("/tmp/{name}_channel_{o}_binary_mask_batch.png"))?;
+                let (input, output) = collect_minibatch_input_output(&tensor_samples_train, &sample_indices, &Device::Cpu, Segmentation::OneHot)?;
+                for (i, s) in sample_indices.iter().enumerate() {
+                    let s = &samples[*s];
+                    let name = &s.name;
+                    let mut file = std::fs::File::create(format!("/tmp/{cat_name}_{name}_batch.txt"))?;
+                    // grab from input;
+                    let img_from_batch = input.i(i)?;
+                    file.write_all(format!("img_from_batch.shape: {:?}\n", img_from_batch.shape()).as_bytes())?;
+                    img_tensor_to_png(&s.image, &format!("/tmp/{cat_name}_{name}_img_batch.png"))?;
+                    let one_hot_from_batch = output.i(i)?;
+                    for o in 0..one_hot_from_batch.dims()[0] {
+                        let binary_mask = one_hot_from_batch.i(o)?;
+                        one_hot_to_png(&binary_mask, &format!("/tmp/{cat_name}_{name}_channel_{o}_binary_mask_batch.png"))?;
+                    }
                 }
             }
         },
