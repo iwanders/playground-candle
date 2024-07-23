@@ -173,6 +173,7 @@ impl FCN32s {
             deconv_config,
             vs.pp("deconv1"),
         )?);
+        network.add(Activation::Relu);
         network.add(candle_nn::batch_norm::batch_norm(
             512,
             norm_config,
@@ -187,6 +188,7 @@ impl FCN32s {
             deconv_config,
             vs.pp("deconv2"),
         )?);
+        network.add(Activation::Relu);
         network.add(candle_nn::batch_norm::batch_norm(
             256,
             norm_config,
@@ -201,6 +203,7 @@ impl FCN32s {
             deconv_config,
             vs.pp("deconv3"),
         )?);
+        network.add(Activation::Relu);
         network.add(candle_nn::batch_norm::batch_norm(
             128,
             norm_config,
@@ -215,6 +218,7 @@ impl FCN32s {
             deconv_config,
             vs.pp("deconv4"),
         )?);
+        network.add(Activation::Relu);
         network.add(candle_nn::batch_norm::batch_norm(
             64,
             norm_config,
@@ -229,6 +233,7 @@ impl FCN32s {
             deconv_config,
             vs.pp("deconv5"),
         )?);
+        network.add(Activation::Relu);
         network.add(candle_nn::batch_norm::batch_norm(
             32,
             norm_config,
@@ -577,7 +582,7 @@ pub fn fit(
                 let zzz = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
                 let img = batch_tensor_to_mask(0, &zzz)?;
                 let img_id = &sample_train[batch_indices[0]].name;
-                img.save(format!("/tmp/train_{epoch}_{img_id}.png"))?;
+                img.save(format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}.png"))?;
             }
             // let logits = candle_nn::ops::softmax(&logits, 1)?;
             // let batch_loss = binary_cross_entropy_loss(&logits, &train_output_tensor)?;
@@ -609,7 +614,7 @@ pub fn fit(
             if settings.save_val_mask {
                 let img = batch_tensor_to_mask(0, &classified_pixels)?;
                 let img_id = &sample_val[batch_indices[0]].name;
-                img.save(format!("/tmp/val_{epoch:0>5}_{img_id}.png"))?;
+                img.save(format!("/tmp/val_{epoch:0>5}_{bi:0>2}_{img_id}.png"))?;
             }
             // classified pixels is now (B, 1, 224, 224) u32
             // Validation tensor is also (B, 1, 224, 224) u32, so we can equal them.
