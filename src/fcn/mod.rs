@@ -790,7 +790,8 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
             }
 
             let (tensor_samples_train, tensor_samples_val) =
-                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
+                // create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
+                create_data(&cli.data_path, &CLASSESS[1..])?;
 
             println!("Starting fit");
             fit(
