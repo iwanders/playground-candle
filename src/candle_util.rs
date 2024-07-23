@@ -129,6 +129,22 @@ impl ModuleT for MaxPoolLayer {
     }
 }
 
+pub struct Interpolate2DLayer {
+    target_h: usize,
+    target_w: usize,
+}
+impl Interpolate2DLayer {
+    pub fn new(target_h: usize, target_w: usize) -> candle_core::Result<Interpolate2DLayer> {
+        Ok(Self { target_h, target_w })
+    }
+}
+impl ModuleT for Interpolate2DLayer {
+    fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
+        let _ = train;
+        xs.interpolate2d(self.target_h, self.target_w)
+    }
+}
+
 pub fn load_from_safetensors<P>(
     path: P,
     device: &candle_core::Device,
@@ -314,7 +330,7 @@ pub fn c_u32_one_hot(input: &Tensor, max_count: usize) -> candle_core::Result<Te
 #[cfg(test)]
 mod test {
     use super::*;
-    use candle_core::{Device::Cpu, Tensor};
+    use candle_core::{Device::Cpu, Tensor, Device};
     #[test]
     fn test_candle_print() -> anyhow::Result<()> {
         use candle_nn::{Linear, Module};

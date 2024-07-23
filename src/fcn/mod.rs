@@ -140,6 +140,7 @@ impl ModuleT for VGG16 {
 }
 
 const PASCAL_VOC_CLASSES: usize = 21;
+const FCN32_OUTPUT_SIZE: usize = 5;
 
 pub struct FCN32s {
     vgg16: VGG16,
@@ -154,97 +155,56 @@ impl FCN32s {
         // After https://raw.githubusercontent.com/shelhamer/fcn.berkeleyvision.org/master/voc-fcn32s/train.prototxt
         // into https://ethereon.github.io/netscope/#/editor
 
-        // Tack on the head.
-        let deconv_config = ConvTranspose2dConfig {
-            padding: 1,
-            output_padding: 1,
-            stride: 2,
-            dilation: 1,
-        };
+
         let norm_config = candle_nn::batch_norm::BatchNormConfig::default();
 
-        // deconv1
-        network.add(candle_nn::conv::conv_transpose2d(
-            512,
-            512,
-            3,
-            deconv_config,
-            vs.pp("deconv1"),
-        )?);
+        let padding_one = candle_nn::conv::Conv2dConfig {
+            padding: 1,
+            stride: 1,
+            dilation: 1,
+            groups: 1,
+        };
+
+
+        network.add(candle_nn::conv2d(512, 4096, 7, padding_one, vs.pp("fcn32_1"))?); // 24
         network.add(Activation::Relu);
-        network.add(candle_nn::batch_norm::batch_norm(
-            512,
-            norm_config,
-            vs.pp("deconv1_norm"),
+        network.add(Dropout::new(0.5));
+
+        network.add(candle_nn::conv2d(4096, 4096, 1, padding_one, vs.pp("fcn32_2"))?); // 24
+        network.add(Activation::Relu);
+        network.add(Dropout::new(0.5));
+
+        let padding_zero = candle_nn::conv::Conv2dConfig {
+            padding: 0,
+            stride: 1,
+            dilation: 1,
+            groups: 1,
+        };
+
+        network.add(candle_nn::conv2d(
+            4096,
+            PASCAL_VOC_CLASSES,
+            1,
+            padding_zero,
+            vs.pp(format!("classifier")),
         )?);
 
-        // deconv2
-        network.add(candle_nn::conv::conv_transpose2d(
-            512,
-            256,
-            3,
-            deconv_config,
-            vs.pp("deconv2"),
-        )?);
-        network.add(Activation::Relu);
-        network.add(candle_nn::batch_norm::batch_norm(
-            256,
-            norm_config,
-            vs.pp("deconv2_norm"),
-        )?);
 
-        // deconv3
+        /*
+        let deconv_config = ConvTranspose2dConfig {
+            padding: 0,
+            output_padding: 0,
+            stride: 32,
+            dilation: 1,
+        };
         network.add(candle_nn::conv::conv_transpose2d(
-            256,
-            128,
-            3,
-            deconv_config,
-            vs.pp("deconv3"),
-        )?);
-        network.add(Activation::Relu);
-        network.add(candle_nn::batch_norm::batch_norm(
-            128,
-            norm_config,
-            vs.pp("deconv3_norm"),
-        )?);
-
-        // deconv4
-        network.add(candle_nn::conv::conv_transpose2d(
-            128,
+            PASCAL_VOC_CLASSES,
+            PASCAL_VOC_CLASSES,
             64,
-            3,
-            deconv_config,
-            vs.pp("deconv4"),
-        )?);
-        network.add(Activation::Relu);
-        network.add(candle_nn::batch_norm::batch_norm(
-            64,
-            norm_config,
-            vs.pp("deconv4_norm"),
-        )?);
-
-        // deconv5
-        network.add(candle_nn::conv::conv_transpose2d(
-            64,
-            32,
-            3,
             deconv_config,
             vs.pp("deconv5"),
         )?);
-        network.add(Activation::Relu);
-        network.add(candle_nn::batch_norm::batch_norm(
-            32,
-            norm_config,
-            vs.pp("deconv5_norm"),
-        )?);
-
-        network.add(candle_nn::conv2d(
-            32,
-            PASCAL_VOC_CLASSES,
-            1,
-            Default::default(),
-            vs.pp(format!("classifier")),
-        )?);
+        */
 
         Ok(Self {
             vgg16,
@@ -541,6 +501,7 @@ pub fn collect_minibatch_input_output(
         })
         .collect::<Vec<_>>();
     let train_output_tensor = Tensor::stack(&train_output, 0)?;
+    let train_output_tensor = train_output_tensor.interpolate2d(FCN32_OUTPUT_SIZE, FCN32_OUTPUT_SIZE)?;
 
     let train_input_tensor = train_input_tensor.to_device(device)?;
     let train_output_tensor = train_output_tensor.to_device(device)?;
@@ -559,7 +520,7 @@ pub fn fit(
     // That's 2913 (images) * 224 (w) * 224 (h) * 3 (channels) * 4 (float) = 1 902 028 800
     // 1.9 GB, that fits in RAM and VRAM, so lets convert all the images to tensors.
 
-    const MINIBATCH_SIZE: usize = 10; // 20 from the paper, p6.
+    const MINIBATCH_SIZE: usize = 5; // 20 from the paper, p6.
     let batch_count = sample_train.len() / MINIBATCH_SIZE;
 
     let mut rng = XorShiftRng::seed_from_u64(1);
@@ -607,6 +568,8 @@ pub fn fit(
             }
             // let logits = candle_nn::ops::softmax(&logits, 1)?;
             // let batch_loss = binary_cross_entropy_loss(&logits, &train_output_tensor)?;
+            // let logit_s = logits.dims()[2];
+            // train_output_tensor = train_output_tensor.interpolate2d(logit_s, logit_s)?;
             let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor)?;
             // println!("Batch logits shape: {logits:?}");
             // println!("Batch output truth: {train_output_tensor:?}");
@@ -948,6 +911,7 @@ mod test {
     use super::*;
 
     use crate::{approx_equal, error_unwrap};
+    use candle_core::Device;
     use candle_nn::{VarBuilder, VarMap};
 
     #[test]
