@@ -1,11 +1,12 @@
-
 use crate::candle_util::MaxPoolLayer;
 use crate::candle_util::SequentialT;
 // use candle_core::bail;
 use crate::candle_util::*;
 use candle_core::{DType, Device, IndexOp, Result, Tensor};
 // use candle_nn::ops::log_softmax;
-use candle_nn::{Activation, ConvTranspose2dConfig, ModuleT, Optimizer, VarBuilder, VarMap};
+use candle_nn::{
+    Activation, ConvTranspose2dConfig, Dropout, ModuleT, Optimizer, VarBuilder, VarMap,
+};
 use rayon::prelude::*;
 
 use std::io::prelude::*;
@@ -13,9 +14,8 @@ use std::io::prelude::*;
 use rand::prelude::*;
 use rand_xorshift::XorShiftRng;
 
-
-use clap::{Args, Parser, Subcommand};
 use anyhow::Context;
+use clap::{Args, Parser, Subcommand};
 /*
 use candle_core::IndexOp;
 use candle_nn::Optimizer;
@@ -162,8 +162,6 @@ impl FCN32s {
             dilation: 1,
         };
         let norm_config = candle_nn::batch_norm::BatchNormConfig::default();
-
-        network.add(Activation::Relu);
 
         // deconv1
         network.add(candle_nn::conv::conv_transpose2d(
@@ -352,12 +350,15 @@ pub fn img_tensor_to_png(v: &Tensor, path: &str) -> std::result::Result<(), anyh
 pub fn one_hot_to_png(v: &Tensor, path: &str) -> std::result::Result<(), anyhow::Error> {
     let w = v.dims()[0] as u32;
     let h = v.dims()[1] as u32;
-    let vu8 = v.flatten_all()?.to_vec1::<f32>()?.drain(..).map(|x| (x * 255.0) as u8).collect::<Vec<_>>();
+    let vu8 = v
+        .flatten_all()?
+        .to_vec1::<f32>()?
+        .drain(..)
+        .map(|x| (x * 255.0) as u8)
+        .collect::<Vec<_>>();
     let img = image::GrayImage::from_vec(w, h, vu8).with_context(|| "buffer to small")?;
 
-    let _r = image::DynamicImage::ImageLuma8(img)
-        .to_rgb8()
-        .save(path)?;
+    let _r = image::DynamicImage::ImageLuma8(img).to_rgb8().save(path)?;
     Ok(())
 }
 
@@ -495,8 +496,14 @@ impl SampleTensor {
         // let image = Tensor::full(0.5f32, (3, 224, 224), device)?;
         // let mask = image.clone();
 
-        let img_id = sample.image_path.file_stem().with_context(|| "no file stem")?;
-        let name = img_id.to_str().with_context(|| "failed to convert to str")?.to_owned();
+        let img_id = sample
+            .image_path
+            .file_stem()
+            .with_context(|| "no file stem")?;
+        let name = img_id
+            .to_str()
+            .with_context(|| "failed to convert to str")?
+            .to_owned();
 
         Ok(Self {
             sample,
@@ -508,11 +515,16 @@ impl SampleTensor {
     }
 }
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
-pub enum Segmentation{
+pub enum Segmentation {
     OneHot,
-    Class
+    Class,
 }
-pub fn collect_minibatch_input_output(input: &[SampleTensor], batch_indices: &[usize], device: &Device, seg: Segmentation) -> anyhow::Result<(Tensor, Tensor)> {
+pub fn collect_minibatch_input_output(
+    input: &[SampleTensor],
+    batch_indices: &[usize],
+    device: &Device,
+    seg: Segmentation,
+) -> anyhow::Result<(Tensor, Tensor)> {
     let train_input = batch_indices
         .iter()
         .map(|i| &input[*i].image)
@@ -520,10 +532,12 @@ pub fn collect_minibatch_input_output(input: &[SampleTensor], batch_indices: &[u
     let train_input_tensor = Tensor::stack(&train_input, 0)?;
     let train_output = batch_indices
         .iter()
-        .map(|i| if seg == Segmentation::OneHot {
-            &input[*i].segmentation_one_hot
-        } else {
-            &input[*i].segmentation
+        .map(|i| {
+            if seg == Segmentation::OneHot {
+                &input[*i].segmentation_one_hot
+            } else {
+                &input[*i].segmentation
+            }
         })
         .collect::<Vec<_>>();
     let train_output_tensor = Tensor::stack(&train_output, 0)?;
@@ -532,7 +546,6 @@ pub fn collect_minibatch_input_output(input: &[SampleTensor], batch_indices: &[u
     let train_output_tensor = train_output_tensor.to_device(device)?;
     Ok((train_input_tensor, train_output_tensor))
 }
-
 
 pub fn fit(
     varmap: &VarMap,
@@ -562,7 +575,10 @@ pub fn fit(
         if epoch != settings.epoch && epoch.rem_euclid(settings.save_interval) == 0 {
             // Save the checkpoint.
             let mut output_path = settings.save_path.clone();
-            output_path.push(format!("fcn_{epoch}_lr{lr}.safetensors", lr=settings.learning_rate));
+            output_path.push(format!(
+                "fcn_{epoch}_lr{lr}.safetensors",
+                lr = settings.learning_rate
+            ));
             varmap.save(&output_path)?;
         }
 
@@ -571,7 +587,12 @@ pub fn fit(
         let mut sum_loss = 0.0f32;
         // Train with batches
         for (bi, batch_indices) in shuffled_indices.chunks(MINIBATCH_SIZE).enumerate() {
-            let (train_input_tensor, train_output_tensor) = collect_minibatch_input_output(&sample_train, &batch_indices, device, Segmentation::OneHot)?;
+            let (train_input_tensor, train_output_tensor) = collect_minibatch_input_output(
+                &sample_train,
+                &batch_indices,
+                device,
+                Segmentation::OneHot,
+            )?;
             let logits = fcn.forward_t(&train_input_tensor, true)?;
 
             // Dump an image that was trained on.
@@ -600,13 +621,17 @@ pub fn fit(
         }
         let avg_loss = sum_loss / (batch_count as f32);
 
-
         // Validate, also in batches to avoid vram limits.
         let mut correct_pixels = 0;
         let mut pixel_count = 0;
         let sample_val_indices = (0..sample_val.len()).collect::<Vec<usize>>();
         for (bi, batch_indices) in sample_val_indices.chunks(MINIBATCH_SIZE).enumerate() {
-            let (val_input_tensor, val_output_tensor) = collect_minibatch_input_output(&sample_val, &batch_indices, device, Segmentation::Class)?;
+            let (val_input_tensor, val_output_tensor) = collect_minibatch_input_output(
+                &sample_val,
+                &batch_indices,
+                device,
+                Segmentation::Class,
+            )?;
             let logits_val = fcn.forward_t(&val_input_tensor, false)?;
             let sigm = candle_nn::ops::sigmoid(&logits_val)?;
             let classified_pixels = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
@@ -619,8 +644,8 @@ pub fn fit(
             // classified pixels is now (B, 1, 224, 224) u32
             // Validation tensor is also (B, 1, 224, 224) u32, so we can equal them.
             let eq = classified_pixels.eq(&val_output_tensor)?;
-            let eq = eq.to_dtype(DType::U32)?;  // eq returns u8, so change that back to u32.
-            // Accuracy is number of correct pixels.
+            let eq = eq.to_dtype(DType::U32)?; // eq returns u8, so change that back to u32.
+                                               // Accuracy is number of correct pixels.
             let correct = eq.sum_all()?;
             correct_pixels += correct.to_scalar::<u32>()?;
             // Right now we're counting black / no label as well... in the paper that's not what
@@ -628,12 +653,12 @@ pub fn fit(
             pixel_count += eq.elem_count();
 
             if bi >= settings.validation_batch_limit.unwrap_or(usize::MAX) {
-                break
+                break;
             }
         }
 
         let test_accuracy = (correct_pixels as f64) / (pixel_count as f64);
-        
+
         println!(
             "{epoch:4} train loss {:8.5} test acc: {:5.2}%",
             avg_loss,
@@ -706,9 +731,6 @@ pub fn create_data(
     Ok((tensor_samples_train, tensor_samples_val))
 }
 
-
-
-
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 #[command(propagate_version = true)]
@@ -730,22 +752,22 @@ pub struct FitSettings {
     vgg_load: Option<std::path::PathBuf>,
 
     #[arg(short)]
-    #[arg(default_value="1")]
+    #[arg(default_value = "1")]
     /// The start epoch of this run
     epoch: usize,
 
     #[arg(long)]
-    #[arg(default_value="/tmp/")]
+    #[arg(default_value = "/tmp/")]
     /// The directory into which to store checkpoints during training
     save_path: std::path::PathBuf,
 
     #[arg(long)]
-    #[arg(default_value="1")]
+    #[arg(default_value = "1")]
     /// Save the checkpoint every save_interval epochs during training.
     save_interval: usize,
 
     #[arg(short, long)]
-    #[arg(default_value="1e-4")]
+    #[arg(default_value = "1e-4")]
     learning_rate: f64,
 
     #[arg(long)]
@@ -781,7 +803,6 @@ enum Commands {
     VerifyData,
 }
 
-
 pub fn main() -> std::result::Result<(), anyhow::Error> {
     let device = Device::new_cuda(0)?;
 
@@ -804,7 +825,6 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
             if let Some(v) = &s.vgg_load {
                 varmap.load_into(&v)?;
             }
-
 
             let (tensor_samples_train, tensor_samples_val) =
                 create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
@@ -832,7 +852,10 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
 
             let sample_indices = [0, 50, 100, 200];
 
-            let categories = [("train", &tensor_samples_train), ("val", &tensor_samples_val)];
+            let categories = [
+                ("train", &tensor_samples_train),
+                ("val", &tensor_samples_val),
+            ];
 
             for (cat_name, samples) in categories {
                 for s in sample_indices {
@@ -843,7 +866,9 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                     file.write_all(format!("name: {name}\n").as_bytes())?;
 
                     let back_to_img = tensor_to_mask(&s.segmentation)?;
-                    file.write_all(format!("segmentation.shape: {:?}\n", s.segmentation.shape()).as_bytes())?;
+                    file.write_all(
+                        format!("segmentation.shape: {:?}\n", s.segmentation.shape()).as_bytes(),
+                    )?;
                     back_to_img.save(format!("/tmp/{cat_name}_{name}_segmentation_to_img.png"))?;
                     img_tensor_to_png(&s.image, &format!("/tmp/{cat_name}_{name}_img.png"))?;
                     file.write_all(format!("image.shape: {:?}\n", s.image.shape()).as_bytes())?;
@@ -853,38 +878,65 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                     for v in s.segmentation.flatten_all()?.to_vec1::<u32>()? {
                         labels.insert(v);
                     }
-                    let mask_str = labels.iter().map(|x| format!("{x}({})", CLASSESS[*x as usize])).collect::<Vec<_>>().join(" ");
+                    let mask_str = labels
+                        .iter()
+                        .map(|x| format!("{x}({})", CLASSESS[*x as usize]))
+                        .collect::<Vec<_>>()
+                        .join(" ");
                     file.write_all(format!("masks: {mask_str}\n").as_bytes())?;
 
                     let one_hot = &s.segmentation_one_hot;
-                    file.write_all(format!("one_hot.shape: {:?}\n", s.segmentation_one_hot.shape()).as_bytes())?;
-                    
+                    file.write_all(
+                        format!("one_hot.shape: {:?}\n", s.segmentation_one_hot.shape()).as_bytes(),
+                    )?;
+
                     for i in 0..one_hot.dims()[0] {
                         let binary_mask = one_hot.i(i)?;
                         if i == 0 {
-                            file.write_all(format!("one_hot.i(i).shape: {:?}, type: {:?}\n", binary_mask.shape(), binary_mask.dtype()).as_bytes())?;
+                            file.write_all(
+                                format!(
+                                    "one_hot.i(i).shape: {:?}, type: {:?}\n",
+                                    binary_mask.shape(),
+                                    binary_mask.dtype()
+                                )
+                                .as_bytes(),
+                            )?;
                         }
-                        one_hot_to_png(&binary_mask, &format!("/tmp/{cat_name}_{name}_channel_{i}_binary_mask.png"))?;
+                        one_hot_to_png(
+                            &binary_mask,
+                            &format!("/tmp/{cat_name}_{name}_channel_{i}_binary_mask.png"),
+                        )?;
                     }
                 }
 
-                let (input, output) = collect_minibatch_input_output(&samples, &sample_indices, &Device::Cpu, Segmentation::OneHot)?;
+                let (input, output) = collect_minibatch_input_output(
+                    &samples,
+                    &sample_indices,
+                    &Device::Cpu,
+                    Segmentation::OneHot,
+                )?;
                 for (i, s) in sample_indices.iter().enumerate() {
                     let s = &samples[*s];
                     let name = &s.name;
-                    let mut file = std::fs::File::create(format!("/tmp/{cat_name}_{name}_batch.txt"))?;
+                    let mut file =
+                        std::fs::File::create(format!("/tmp/{cat_name}_{name}_batch.txt"))?;
                     // grab from input;
                     let img_from_batch = input.i(i)?;
-                    file.write_all(format!("img_from_batch.shape: {:?}\n", img_from_batch.shape()).as_bytes())?;
+                    file.write_all(
+                        format!("img_from_batch.shape: {:?}\n", img_from_batch.shape()).as_bytes(),
+                    )?;
                     img_tensor_to_png(&s.image, &format!("/tmp/{cat_name}_{name}_img_batch.png"))?;
                     let one_hot_from_batch = output.i(i)?;
                     for o in 0..one_hot_from_batch.dims()[0] {
                         let binary_mask = one_hot_from_batch.i(o)?;
-                        one_hot_to_png(&binary_mask, &format!("/tmp/{cat_name}_{name}_channel_{o}_binary_mask_batch.png"))?;
+                        one_hot_to_png(
+                            &binary_mask,
+                            &format!("/tmp/{cat_name}_{name}_channel_{o}_binary_mask_batch.png"),
+                        )?;
                     }
                 }
             }
-        },
+        }
     }
 
     Ok(())
