@@ -570,7 +570,12 @@ pub fn fit(
             // let batch_loss = binary_cross_entropy_loss(&logits, &train_output_tensor)?;
             // let logit_s = logits.dims()[2];
             // train_output_tensor = train_output_tensor.interpolate2d(logit_s, logit_s)?;
-            let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor)?;
+            // let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor)?;
+
+
+            let sigm = candle_nn::ops::sigmoid(&logits)?;
+            let batch_loss = (sigm - train_output_tensor)?.mean_all()?;
+
             // println!("Batch logits shape: {logits:?}");
             // println!("Batch output truth: {train_output_tensor:?}");
             // println!("Going into backwards step");
@@ -790,8 +795,8 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
             }
 
             let (tensor_samples_train, tensor_samples_val) =
-                // create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
-                create_data(&cli.data_path, &CLASSESS[1..])?;
+                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
+                // create_data(&cli.data_path, &CLASSESS[1..])?;
 
             println!("Starting fit");
             fit(
