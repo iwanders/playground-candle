@@ -79,8 +79,15 @@ impl VGG16 {
 
         let vs = vs.pp("features");
 
+        let padding_100 = candle_nn::conv::Conv2dConfig {
+            padding: 100,
+            stride: 1,
+            dilation: 1,
+            groups: 1,
+        };
+
         // Block 1
-        network.add(candle_nn::conv2d(3, 64, 3, padding_one, vs.pp("0"))?); // 0
+        network.add(candle_nn::conv2d(3, 64, 3, padding_100, vs.pp("0"))?); // 0
         network.add(Activation::Relu); // 1
         network.add(candle_nn::conv2d(64, 64, 3, padding_one, vs.pp("2"))?); // 2
         network.add(Activation::Relu); // 3
@@ -140,7 +147,7 @@ impl ModuleT for VGG16 {
 }
 
 const PASCAL_VOC_CLASSES: usize = 21;
-const FCN32_OUTPUT_SIZE: usize = 5;
+const FCN32_OUTPUT_SIZE: usize = 11;
 
 pub struct FCN32s {
     vgg16: VGG16,
@@ -520,8 +527,8 @@ pub fn fit(
     // That's 2913 (images) * 224 (w) * 224 (h) * 3 (channels) * 4 (float) = 1 902 028 800
     // 1.9 GB, that fits in RAM and VRAM, so lets convert all the images to tensors.
 
-    const MINIBATCH_SIZE: usize = 5; // 20 from the paper, p6.
-    let batch_count = sample_train.len() / MINIBATCH_SIZE;
+    // const MINIBATCH_SIZE: usize = 5; // 20 from the paper, p6.
+    let batch_count = sample_train.len() / settings.minibatch_size;
 
     let mut rng = XorShiftRng::seed_from_u64(1);
     let mut shuffled_indices: Vec<usize> = (0..sample_train.len()).collect();
@@ -547,7 +554,7 @@ pub fn fit(
 
         let mut sum_loss = 0.0f32;
         // Train with batches
-        for (bi, batch_indices) in shuffled_indices.chunks(MINIBATCH_SIZE).enumerate() {
+        for (bi, batch_indices) in shuffled_indices.chunks(settings.minibatch_size).enumerate() {
             let (train_input_tensor, train_output_tensor) = collect_minibatch_input_output(
                 &sample_train,
                 &batch_indices,
@@ -585,7 +592,7 @@ pub fn fit(
             sum_loss += batch_loss_f32;
             println!(
                 "      bi: {bi: >2?} / {}: {batch_loss_f32}",
-                shuffled_indices.len() / MINIBATCH_SIZE
+                shuffled_indices.len() / settings.minibatch_size
             );
         }
         let avg_loss = sum_loss / (batch_count as f32);
@@ -594,7 +601,7 @@ pub fn fit(
         let mut correct_pixels = 0;
         let mut pixel_count = 0;
         let sample_val_indices = (0..sample_val.len()).collect::<Vec<usize>>();
-        for (bi, batch_indices) in sample_val_indices.chunks(MINIBATCH_SIZE).enumerate() {
+        for (bi, batch_indices) in sample_val_indices.chunks(settings.minibatch_size).enumerate() {
             let (val_input_tensor, val_output_tensor) = collect_minibatch_input_output(
                 &sample_val,
                 &batch_indices,
@@ -738,6 +745,10 @@ pub struct FitSettings {
     #[arg(short, long)]
     #[arg(default_value = "1e-4")]
     learning_rate: f64,
+
+    #[arg(short, long)]
+    #[arg(default_value = "5")]
+    minibatch_size: usize,
 
     #[arg(long)]
     /// There's a lot of validation data, if set this limits it to n batches.
