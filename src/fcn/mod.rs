@@ -565,6 +565,7 @@ pub fn fit(
                 let img = batch_tensor_to_mask(0, &zzz)?;
                 let img_id = &sample_train[batch_indices[0]].name;
                 img.save(format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}.png"))?;
+                img_tensor_to_png(&train_input_tensor.i(0)?, &format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_image.png"))?;
             }
             // let logits = candle_nn::ops::softmax(&logits, 1)?;
             // let batch_loss = binary_cross_entropy_loss(&logits, &train_output_tensor)?;
