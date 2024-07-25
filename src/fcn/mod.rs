@@ -147,7 +147,7 @@ impl ModuleT for VGG16 {
 }
 
 const PASCAL_VOC_CLASSES: usize = 21;
-const FCN32_OUTPUT_SIZE: usize = 11;
+const FCN32_OUTPUT_SIZE: usize = 9;
 
 pub struct FCN32s {
     vgg16: VGG16,
@@ -197,7 +197,6 @@ impl FCN32s {
         )?);
 
 
-        /*
         let deconv_config = ConvTranspose2dConfig {
             padding: 0,
             output_padding: 0,
@@ -211,6 +210,7 @@ impl FCN32s {
             deconv_config,
             vs.pp("deconv5"),
         )?);
+        /*
         */
 
         Ok(Self {
@@ -220,18 +220,21 @@ impl FCN32s {
         })
     }
 
+    /*
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
         let x = x.to_device(&self.device)?;
         let z = self.vgg16.forward(&x)?;
         self.network.forward(&z)
-    }
+    }*/
 }
 
 impl ModuleT for FCN32s {
     fn forward_t(&self, x: &Tensor, train: bool) -> Result<Tensor> {
         let x = x.to_device(&self.device)?;
         let z = self.vgg16.forward_t(&x, train)?;
-        self.network.forward_t(&z, train)
+        let img = self.network.forward_t(&z, train)?;
+        // crop off the outer pixels.
+        img.i((.., .., 1..10, 1..10))
     }
 }
 
@@ -576,13 +579,14 @@ pub fn fit(
             }
             // let logits = candle_nn::ops::softmax(&logits, 1)?;
             // let batch_loss = binary_cross_entropy_loss(&logits, &train_output_tensor)?;
-            // let logit_s = logits.dims()[2];
-            // train_output_tensor = train_output_tensor.interpolate2d(logit_s, logit_s)?;
-            // let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor)?;
+
+            let logit_s = logits.dims()[2];
+            let train_output_tensor = train_output_tensor.interpolate2d(logit_s, logit_s)?;
+            let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor)?;
 
 
-            let sigm = candle_nn::ops::sigmoid(&logits)?;
-            let batch_loss = (sigm - train_output_tensor)?.mean_all()?;
+            // let sigm = candle_nn::ops::sigmoid(&logits)?;
+            // let batch_loss = (sigm - train_output_tensor)?.mean_all()?;
 
             // println!("Batch logits shape: {logits:?}");
             // println!("Batch output truth: {train_output_tensor:?}");
