@@ -244,6 +244,27 @@ pub use approx_equal;
 pub use approx_equal_slice;
 pub use error_unwrap;
 
+#[derive(Debug, Default)]
+pub struct CuMem {
+    pub available: usize,
+    pub total: usize,
+}
+impl std::fmt::Display for CuMem {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(fmt, "{}MiB/{}MiB", (self.total - self.available) / (1024 * 1024), self.total / (1024 * 1024))
+    }
+}
+
+#[cfg(feature = "cuda")]
+pub fn get_vram() -> candle_core::Result<CuMem> {
+    use candle_core::cuda_backend::cudarc;
+    return cudarc::driver::result::mem_get_info().map_err(|e| candle_core::Error::Cuda(Box::new(e))).map(|(available, total)| CuMem{available, total});
+}
+#[cfg(not(feature = "cuda"))]
+pub fn get_vram() -> candle_core::Result<CuMem> {
+    Ok(Default::default())
+}
+
 /// Binary cross entropy, no reduction, expects data after sigmoid.
 pub fn binary_cross_entropy(input: &Tensor, target: &Tensor) -> candle_core::Result<Tensor> {
     if input.dtype() != DType::F32 {

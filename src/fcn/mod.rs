@@ -429,6 +429,7 @@ pub fn batch_tensor_to_mask(index: usize, x: &Tensor) -> anyhow::Result<image::R
 }
 
 impl SampleTensor {
+
     pub fn load(
         sample: voc_dataset::Sample,
         device: &Device,
@@ -439,7 +440,7 @@ impl SampleTensor {
         let img = img
             .resize_exact(224, 224, image::imageops::FilterType::Lanczos3)
             .to_rgb32f();
-        let image = Tensor::from_vec(img.into_vec(), (3, 224, 224), device)?;
+        let image = Tensor::from_vec(img.into_vec(), (3, 224, 224), device)?.detach();
         // println!("s: {:?}", image.shape());
         // img_tensor_to_png(&image, "/tmp/foo.png")?;
 
@@ -454,14 +455,14 @@ impl SampleTensor {
         let img = ImageReader::open(&segmentation_path)?.decode()?;
         let img = img.resize_exact(224, 224, image::imageops::FilterType::Nearest);
         // let img = img.to_rgb32f();
-        let segmentation = mask_to_tensor(&img.to_rgb8(), device)?;
+        let segmentation = mask_to_tensor(&img.to_rgb8(), device)?.detach();
         if false {
             let back_to_img = tensor_to_mask(&segmentation)?;
             back_to_img.save("/tmp/mask.png")?;
         }
         // let image = Tensor::from_vec(img.into_vec(), (1, 224, 224), device)?;
 
-        let segmentation_one_hot = c_u32_one_hot(&segmentation, CLASSESS.len())?;
+        let segmentation_one_hot = c_u32_one_hot(&segmentation, CLASSESS.len())?.detach();
         // Next, read the mask from somewhere.
         // let image = Tensor::full(0.5f32, (3, 224, 224), device)?;
         // let mask = image.clone();
@@ -513,8 +514,8 @@ pub fn collect_minibatch_input_output(
     let train_output_tensor = Tensor::stack(&train_output, 0)?;
     let train_output_tensor = train_output_tensor.interpolate2d(FCN32_OUTPUT_SIZE, FCN32_OUTPUT_SIZE)?;
 
-    let train_input_tensor = train_input_tensor.to_device(device)?;
-    let train_output_tensor = train_output_tensor.to_device(device)?;
+    let train_input_tensor = train_input_tensor.to_device(device)?.detach();
+    let train_output_tensor = train_output_tensor.to_device(device)?.detach();
     Ok((train_input_tensor, train_output_tensor))
 }
 
@@ -540,6 +541,7 @@ pub fn fit(
     }
     println!("Fitting with {settings:#?}");
 
+    println!("Before first epoch:  {}", get_vram()?);
     // sgd doesn't support momentum, but it would be 0.9
     let mut sgd = candle_nn::SGD::new(varmap.all_vars(), settings.learning_rate)?;
     for epoch in settings.epoch..settings.max_epochs.unwrap_or(usize::MAX) {
@@ -564,7 +566,10 @@ pub fn fit(
                 device,
                 Segmentation::OneHot,
             )?;
+            println!("Before forward: {}", get_vram()?);
+
             let logits = fcn.forward_t(&train_input_tensor, true)?;
+            println!("After  forward: {}", get_vram()?);
 
             // Dump an image that was trained on.
             if settings.save_train_mask {
@@ -580,6 +585,7 @@ pub fn fit(
             // let logits = candle_nn::ops::softmax(&logits, 1)?;
             // let batch_loss = binary_cross_entropy_loss(&logits, &train_output_tensor)?;
 
+            // do proper BCELogitsLoss
             let logit_s = logits.dims()[2];
             let train_output_tensor = train_output_tensor.interpolate2d(logit_s, logit_s)?;
             let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor)?;
@@ -591,7 +597,9 @@ pub fn fit(
             // println!("Batch logits shape: {logits:?}");
             // println!("Batch output truth: {train_output_tensor:?}");
             // println!("Going into backwards step");
+            println!("Before backward: {}", get_vram()?);
             sgd.backward_step(&batch_loss)?;
+            println!("After backward:  {}", get_vram()?);
             let batch_loss_f32 = batch_loss.sum_all()?.to_scalar::<f32>()?;
             sum_loss += batch_loss_f32;
             println!(
@@ -601,6 +609,7 @@ pub fn fit(
         }
         let avg_loss = sum_loss / (batch_count as f32);
 
+        println!("Before validate:  {}", get_vram()?);
         // Validate, also in batches to avoid vram limits.
         let mut correct_pixels = 0;
         let mut pixel_count = 0;
@@ -799,6 +808,8 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     let network = FCN32s::new(vgg16, vs, &device)?;
 
     let cli = Cli::parse();
+
+    println!("Vars: {:?}", varmap.all_vars());
 
     match &cli.command {
         Commands::Fit(s) => {
