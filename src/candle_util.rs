@@ -257,6 +257,7 @@ impl std::fmt::Display for CuMem {
 
 #[cfg(feature = "cuda")]
 pub fn get_vram() -> candle_core::Result<CuMem> {
+    // return Ok(Default::default());
     use candle_core::cuda_backend::cudarc;
     return cudarc::driver::result::mem_get_info().map_err(|e| candle_core::Error::Cuda(Box::new(e))).map(|(available, total)| CuMem{available, total});
 }

@@ -39,6 +39,24 @@ Fully Convolutional Networks for Semantic Segmentation
         Converts a PIL Image (H x W x C) to a Tensor of shape (C x H x W).
 */
 
+/*
+On vram woes:
+    During backpropagation we allocate 3gb, the actual gradients end up being 500mb.
+    Running on the cpu shows the same vram difference, between end of gradient calc and begin:
+        >>> l  = 0.44
+        >>> h = 0.659
+        >>> h - l
+        0.21900000000000003
+        >>> 0.21 * 16
+        3.36 gb
+
+    Torch stays stable at 3gb vram, this currently spikes up to 7.8gb.
+    
+
+
+*/
+
+
 /// VGG Network, only the convolution section
 ///
 /// https://arxiv.org/pdf/1409.1556
@@ -566,10 +584,10 @@ pub fn fit(
                 device,
                 Segmentation::OneHot,
             )?;
-            println!("Before forward: {}", get_vram()?);
+            println!("Before forward:  {}", get_vram()?);
 
             let logits = fcn.forward_t(&train_input_tensor, true)?;
-            println!("After  forward: {}", get_vram()?);
+            println!("After  forward:  {}", get_vram()?);
 
             // Dump an image that was trained on.
             if settings.save_train_mask {
@@ -606,6 +624,7 @@ pub fn fit(
                 "      bi: {bi: >2?} / {}: {batch_loss_f32}",
                 shuffled_indices.len() / settings.minibatch_size
             );
+            // panic!();
         }
         let avg_loss = sum_loss / (batch_count as f32);
 
@@ -797,7 +816,8 @@ enum Commands {
 }
 
 pub fn main() -> std::result::Result<(), anyhow::Error> {
-    let device = Device::new_cuda(0)?;
+    // let device = Device::new_cuda(0)?;
+    let device = Device::Cpu;
 
     println!("Building network");
     let varmap = VarMap::new();
@@ -809,7 +829,10 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
 
     let cli = Cli::parse();
 
-    println!("Vars: {:?}", varmap.all_vars());
+    for v in varmap.all_vars() {
+        println!("var: {:?}   {v:?}", v.as_tensor().id())
+    }
+
 
     match &cli.command {
         Commands::Fit(s) => {
