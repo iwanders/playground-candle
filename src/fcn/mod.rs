@@ -618,8 +618,8 @@ pub fn fit(
             // println!("Batch output truth: {train_output_tensor:?}");
             // println!("Going into backwards step");
             let map_prior = {
-                let mut m = candle_core::TensorTracker::instance().data().lock().unwrap();
-                m.clear();
+                let m = candle_core::TensorTracker::instance().data().lock().unwrap();
+                // m.clear();
                 (*m).clone()
             };
 
@@ -675,18 +675,29 @@ pub fn fit(
                 let new_ids: std::collections::HashSet::<candle_core::TensorId>  = after_ids.difference(&before_ids).copied().collect();
                 println!("Tensor ids created during backwards and still present: {} {new_ids:?}", new_ids.len());
                 println!("\n\n\n\n");
+                let mut still_existing = vec![];
+                let mut total_bytes = 0;
                 for i in new_ids {
-                    println!("{i:?}");
                     let tt = map_post.get(&i).unwrap();
+                    if tt.storage.strong_count() == 0 && tt.deletion.is_some() {
+                        continue // properly deleted, continue.
+                    }
+                    println!("{i:?}");
                     if tt.deletion.is_some() {
                         // continue; // somehow, everything always has a deletion? storage not tied to Tensor_?
                     }
-                    println!(" {}", tt.shape.elem_count() * 4);
-                    println!(" {}", tt.creation);
+                    still_existing.push(tt);
+                    println!(" total bytes: {}", tt.shape.elem_count() * 4);
+                    total_bytes += tt.shape.elem_count() * 4;
+                    println!(" storage use count: {}", tt.storage.strong_count());
+                    println!(" Create\n{}", tt.creation);
+                    println!(" Delete\n{}", tt.deletion.as_ref().unwrap_or(&"".to_owned()));
                     println!("\n\n\n\n");
                     // println!("{:}", map_post.get(&i).unwrap());
                 }
 
+                
+                println!("Still in storage, but seemingly destroyed: {total_bytes}");
                 panic!("reached the end of the first step");
             }
         }
