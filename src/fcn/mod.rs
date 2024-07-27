@@ -618,7 +618,8 @@ pub fn fit(
             // println!("Batch output truth: {train_output_tensor:?}");
             // println!("Going into backwards step");
             let map_prior = {
-                let m = candle_core::TensorTracker::instance().data().lock().unwrap();
+                let mut m = candle_core::TensorTracker::instance().data().lock().unwrap();
+                m.clear();
                 (*m).clone()
             };
 
@@ -642,23 +643,30 @@ pub fn fit(
                 // Ids that are present in memory before backwards step.
                 let mut present_before = std::collections::HashSet::<candle_core::TensorId>::new();
                 for record in map_prior.values() {
-                    present_before.insert(record.id);
+                    // if record.deletion.is_none() {
+                        present_before.insert(record.id);
+                    // }
                 }
                 let total_allocs_before = present_before.len();
 
                 // Ids that are present in memory after the backwards step.
                 let mut present_after = std::collections::HashSet::<candle_core::TensorId>::new();
                 for record in map_post.values() {
-                    present_after.insert(record.id);
+                    // if record.deletion.is_none() {
+                        present_after.insert(record.id);
+                    // }
                 }
                 let total_allocs_after = present_after.len();
                 let new_present_allocations: std::collections::HashSet::<candle_core::TensorId> = present_after.difference(&present_before).copied().collect();
 
 
 
+                println!("map prior               : {: >20}", map_prior.len());
+                println!("map post                : {: >20}", map_post.len());
                 println!("total_allocs_before     : {total_allocs_before: >20}");
                 println!("total_allocs_after      : {total_allocs_after: >20}");
                 println!("new_present_allocations : {: >20}", new_present_allocations.len());
+                // So we get 661 new tensors, but they all seem to have their deletion called?
 
 
 
