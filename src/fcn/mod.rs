@@ -57,6 +57,8 @@ On vram woes:
 */
 
 
+const MEMORY_ANALYSIS: bool = true;
+
 /// VGG Network, only the convolution section
 ///
 /// https://arxiv.org/pdf/1409.1556
@@ -615,7 +617,13 @@ pub fn fit(
             // println!("Batch logits shape: {logits:?}");
             // println!("Batch output truth: {train_output_tensor:?}");
             // println!("Going into backwards step");
+            let map_prior = {
+                let m = candle_core::TensorTracker::instance().data().lock().unwrap();
+                (*m).clone()
+            };
+
             println!("Before backward: {}", get_vram()?);
+            println!("  Backward step now \n\n\n\n\n");
             sgd.backward_step(&batch_loss)?;
             println!("After backward:  {}", get_vram()?);
             let batch_loss_f32 = batch_loss.sum_all()?.to_scalar::<f32>()?;
@@ -624,7 +632,55 @@ pub fn fit(
                 "      bi: {bi: >2?} / {}: {batch_loss_f32}",
                 shuffled_indices.len() / settings.minibatch_size
             );
-            // panic!();
+            if MEMORY_ANALYSIS {
+
+                let map_post = {
+                    let m = candle_core::TensorTracker::instance().data().lock().unwrap();
+                    (*m).clone()
+                };
+
+                // Ids that are present in memory before backwards step.
+                let mut present_before = std::collections::HashSet::<candle_core::TensorId>::new();
+                for record in map_prior.values() {
+                    present_before.insert(record.id);
+                }
+                let total_allocs_before = present_before.len();
+
+                // Ids that are present in memory after the backwards step.
+                let mut present_after = std::collections::HashSet::<candle_core::TensorId>::new();
+                for record in map_post.values() {
+                    present_after.insert(record.id);
+                }
+                let total_allocs_after = present_after.len();
+                let new_present_allocations: std::collections::HashSet::<candle_core::TensorId> = present_after.difference(&present_before).copied().collect();
+
+
+
+                println!("total_allocs_before     : {total_allocs_before: >20}");
+                println!("total_allocs_after      : {total_allocs_after: >20}");
+                println!("new_present_allocations : {: >20}", new_present_allocations.len());
+
+
+
+                let before_ids = map_prior.keys().copied().collect::<std::collections::HashSet<candle_core::TensorId>>();
+                let after_ids = map_post.keys().copied().collect::<std::collections::HashSet<candle_core::TensorId>>();
+                let new_ids: std::collections::HashSet::<candle_core::TensorId>  = after_ids.difference(&before_ids).copied().collect();
+                println!("Tensor ids created during backwards and still present: {} {new_ids:?}", new_ids.len());
+                println!("\n\n\n\n");
+                for i in new_ids {
+                    println!("{i:?}");
+                    let tt = map_post.get(&i).unwrap();
+                    if tt.deletion.is_some() {
+                        // continue; // somehow, everything always has a deletion? storage not tied to Tensor_?
+                    }
+                    println!(" {}", tt.shape.elem_count() * 4);
+                    println!(" {}", tt.creation);
+                    println!("\n\n\n\n");
+                    // println!("{:}", map_post.get(&i).unwrap());
+                }
+
+                panic!("reached the end of the first step");
+            }
         }
         let avg_loss = sum_loss / (batch_count as f32);
 
@@ -816,8 +872,8 @@ enum Commands {
 }
 
 pub fn main() -> std::result::Result<(), anyhow::Error> {
-    // let device = Device::new_cuda(0)?;
-    let device = Device::Cpu;
+    let device = Device::new_cuda(0)?;
+    // let device = Device::Cpu;
 
     println!("Building network");
     let varmap = VarMap::new();
