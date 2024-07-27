@@ -531,8 +531,8 @@ pub fn collect_minibatch_input_output(
             }
         })
         .collect::<Vec<_>>();
-    let train_output_tensor = Tensor::stack(&train_output, 0)?;
-    let train_output_tensor = train_output_tensor.interpolate2d(FCN32_OUTPUT_SIZE, FCN32_OUTPUT_SIZE)?;
+    let train_output_tensor = Tensor::stack(&train_output, 0)?.detach();
+    let train_output_tensor = train_output_tensor.interpolate2d(FCN32_OUTPUT_SIZE, FCN32_OUTPUT_SIZE)?.detach();
 
     let train_input_tensor = train_input_tensor.to_device(device)?.detach();
     let train_output_tensor = train_output_tensor.to_device(device)?.detach();
@@ -575,6 +575,7 @@ pub fn fit(
             varmap.save(&output_path)?;
         }
 
+
         shuffled_indices.shuffle(&mut rng);
 
         let mut sum_loss = 0.0f32;
@@ -586,8 +587,8 @@ pub fn fit(
                 device,
                 Segmentation::OneHot,
             )?;
-            println!("Before forward:  {}", get_vram()?);
 
+            println!("Before forward:  {}", get_vram()?);
             let logits = fcn.forward_t(&train_input_tensor, true)?;
             println!("After  forward:  {}", get_vram()?);
 
@@ -617,14 +618,26 @@ pub fn fit(
             // println!("Batch logits shape: {logits:?}");
             // println!("Batch output truth: {train_output_tensor:?}");
             // println!("Going into backwards step");
-            let map_prior = {
+
+
+            let map_prior : std::collections::HashMap<candle_core::TensorId, Vec<candle_core::TrackedTensor>> = {
                 let m = candle_core::TensorTracker::instance().data().lock().unwrap();
                 // m.clear();
                 (*m).clone()
             };
+            let mut count_of_non_dropped_prior = 0;
+            let mut bytes_non_dropped_prior = 0;
+            for v in map_prior.values() {
+                let record = v.last().unwrap();
+                if record.deletion.is_none() {
+                    count_of_non_dropped_prior += 1;
+                    bytes_non_dropped_prior += record.shape.elem_count() * 4;
+                }
+            }
 
-            println!("Before backward: {}", get_vram()?);
+
             println!("  Backward step now \n\n\n\n\n");
+            println!("Before backward:  {}", get_vram()?);
             sgd.backward_step(&batch_loss)?;
             println!("After backward:  {}", get_vram()?);
             let batch_loss_f32 = batch_loss.sum_all()?.to_scalar::<f32>()?;
@@ -635,7 +648,7 @@ pub fn fit(
             );
             if MEMORY_ANALYSIS {
 
-                let map_post = {
+                let map_post : std::collections::HashMap<candle_core::TensorId, Vec<candle_core::TrackedTensor>>  = {
                     let m = candle_core::TensorTracker::instance().data().lock().unwrap();
                     (*m).clone()
                 };
@@ -644,7 +657,7 @@ pub fn fit(
                 let mut present_before = std::collections::HashSet::<candle_core::TensorId>::new();
                 for record in map_prior.values() {
                     // if record.deletion.is_none() {
-                        present_before.insert(record.id);
+                        present_before.insert(record.last().unwrap().id);
                     // }
                 }
                 let total_allocs_before = present_before.len();
@@ -653,7 +666,7 @@ pub fn fit(
                 let mut present_after = std::collections::HashSet::<candle_core::TensorId>::new();
                 for record in map_post.values() {
                     // if record.deletion.is_none() {
-                        present_after.insert(record.id);
+                        present_after.insert(record.last().unwrap().id);
                     // }
                 }
                 let total_allocs_after = present_after.len();
@@ -679,7 +692,7 @@ pub fn fit(
                 let mut total_bytes_still_storage = 0;
                 let mut total_bytes_new_alloc = 0;
                 for i in new_allocations {
-                    let tt = map_post.get(&i).unwrap();
+                    let tt = map_post.get(&i).unwrap().last().unwrap();
                     total_bytes_new_alloc += tt.shape.elem_count() * 4;
                     if tt.storage.strong_count() == 0 && tt.deletion.is_some() {
                         continue // properly deleted, continue.
@@ -689,7 +702,7 @@ pub fn fit(
                         // continue; // somehow, everything always has a deletion? storage not tied to Tensor_?
                     }
                     still_existing.push(tt);
-                    println!(" total bytes: {}", tt.shape.elem_count() * 4);
+                    println!(" MiB: {}", (tt.shape.elem_count() * 4) / (1024 * 1024));
                     total_bytes_still_storage += tt.shape.elem_count() * 4;
                     println!(" storage use count: {}", tt.storage.strong_count());
                     println!(" Create\n{}", tt.creation);
@@ -698,9 +711,23 @@ pub fn fit(
                     // println!("{:}", map_post.get(&i).unwrap());
                 }
 
+                let mut count_of_non_dropped_post = 0;
+                let mut bytes_non_dropped_post = 0;
+                for v in map_post.values() {
+                    let record = v.last().unwrap();
+                    if record.deletion.is_none() {
+                        count_of_non_dropped_post += 1;
+                        bytes_non_dropped_post += record.shape.elem_count() * 4;
+                    }
+                }
                 
-                println!("Still in storage, but seemingly destroyed: {total_bytes_still_storage}");
-                println!("Total from new allocations               : {total_bytes_new_alloc}");
+                println!("Still in storage, but seemingly destroyed: {} MiB", total_bytes_still_storage / (1024 * 1024));
+                println!("Total from new allocations               : {} MiB",  total_bytes_new_alloc/ (1024 * 1024));
+                println!("count_of_non_dropped_prior               : {} ",  count_of_non_dropped_prior);
+                println!("bytes_non_dropped_prior                  : {} MiB",  bytes_non_dropped_prior/ (1024 * 1024));
+                println!("count_of_non_dropped_post                : {} ",  count_of_non_dropped_post);
+                println!("bytes_non_dropped_post                   : {} MiB",  bytes_non_dropped_post/ (1024 * 1024));
+
                 panic!("reached the end of the first step");
             }
         }
