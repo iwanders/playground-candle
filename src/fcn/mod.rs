@@ -657,7 +657,7 @@ pub fn fit(
                     // }
                 }
                 let total_allocs_after = present_after.len();
-                let new_present_allocations: std::collections::HashSet::<candle_core::TensorId> = present_after.difference(&present_before).copied().collect();
+                let new_allocations: std::collections::HashSet::<candle_core::TensorId> = present_after.difference(&present_before).copied().collect();
 
 
 
@@ -665,20 +665,22 @@ pub fn fit(
                 println!("map post                : {: >20}", map_post.len());
                 println!("total_allocs_before     : {total_allocs_before: >20}");
                 println!("total_allocs_after      : {total_allocs_after: >20}");
-                println!("new_present_allocations : {: >20}", new_present_allocations.len());
+                println!("new_allocations         : {: >20}", new_allocations.len());
                 // So we get 661 new tensors, but they all seem to have their deletion called?
 
 
 
-                let before_ids = map_prior.keys().copied().collect::<std::collections::HashSet<candle_core::TensorId>>();
-                let after_ids = map_post.keys().copied().collect::<std::collections::HashSet<candle_core::TensorId>>();
-                let new_ids: std::collections::HashSet::<candle_core::TensorId>  = after_ids.difference(&before_ids).copied().collect();
-                println!("Tensor ids created during backwards and still present: {} {new_ids:?}", new_ids.len());
+                // let before_ids = map_prior.keys().copied().collect::<std::collections::HashSet<candle_core::TensorId>>();
+                // let after_ids = map_post.keys().copied().collect::<std::collections::HashSet<candle_core::TensorId>>();
+                // let new_ids: std::collections::HashSet::<candle_core::TensorId>  = after_ids.difference(&before_ids).copied().collect();
+                println!("Tensor ids created during backwards and still present: {} {new_allocations:?}", new_allocations.len());
                 println!("\n\n\n\n");
                 let mut still_existing = vec![];
-                let mut total_bytes = 0;
-                for i in new_ids {
+                let mut total_bytes_still_storage = 0;
+                let mut total_bytes_new_alloc = 0;
+                for i in new_allocations {
                     let tt = map_post.get(&i).unwrap();
+                    total_bytes_new_alloc += tt.shape.elem_count() * 4;
                     if tt.storage.strong_count() == 0 && tt.deletion.is_some() {
                         continue // properly deleted, continue.
                     }
@@ -688,7 +690,7 @@ pub fn fit(
                     }
                     still_existing.push(tt);
                     println!(" total bytes: {}", tt.shape.elem_count() * 4);
-                    total_bytes += tt.shape.elem_count() * 4;
+                    total_bytes_still_storage += tt.shape.elem_count() * 4;
                     println!(" storage use count: {}", tt.storage.strong_count());
                     println!(" Create\n{}", tt.creation);
                     println!(" Delete\n{}", tt.deletion.as_ref().unwrap_or(&"".to_owned()));
@@ -697,7 +699,8 @@ pub fn fit(
                 }
 
                 
-                println!("Still in storage, but seemingly destroyed: {total_bytes}");
+                println!("Still in storage, but seemingly destroyed: {total_bytes_still_storage}");
+                println!("Total from new allocations               : {total_bytes_new_alloc}");
                 panic!("reached the end of the first step");
             }
         }
