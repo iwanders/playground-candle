@@ -96,7 +96,7 @@ impl VGG16 {
             groups: 1,
         };
 
-        let vs = vs.pp("features");
+        // let vs = vs.pp("features");
 
         let padding_100 = candle_nn::conv::Conv2dConfig {
             padding: 100,
@@ -106,43 +106,43 @@ impl VGG16 {
         };
 
         // Block 1
-        network.add(candle_nn::conv2d(3, 64, 3, padding_100, vs.pp("0"))?); // 0
+        network.add(candle_nn::conv2d(3, 64, 3, padding_100, vs.pp("conv1_1"))?); // 0
         network.add(Activation::Relu); // 1
-        network.add(candle_nn::conv2d(64, 64, 3, padding_one, vs.pp("2"))?); // 2
+        network.add(candle_nn::conv2d(64, 64, 3, padding_one, vs.pp("conv1_2"))?); // 2
         network.add(Activation::Relu); // 3
         network.add(MaxPoolLayer::new(2)?); // 4
 
         // Block 2
-        network.add(candle_nn::conv2d(64, 128, 3, padding_one, vs.pp("5"))?); // 5
+        network.add(candle_nn::conv2d(64, 128, 3, padding_one, vs.pp("conv2_1"))?); // 5
         network.add(Activation::Relu); // 6
-        network.add(candle_nn::conv2d(128, 128, 3, padding_one, vs.pp("7"))?); // 7
+        network.add(candle_nn::conv2d(128, 128, 3, padding_one, vs.pp("conv2_2"))?); // 7
         network.add(Activation::Relu); // 8
         network.add(MaxPoolLayer::new(2)?); // 9
 
         // Block 3
-        network.add(candle_nn::conv2d(128, 256, 3, padding_one, vs.pp("10"))?); // 10
+        network.add(candle_nn::conv2d(128, 256, 3, padding_one, vs.pp("conv3_1"))?); // 10
         network.add(Activation::Relu); // 11
-        network.add(candle_nn::conv2d(256, 256, 3, padding_one, vs.pp("12"))?); // 12
+        network.add(candle_nn::conv2d(256, 256, 3, padding_one, vs.pp("conv3_2"))?); // 12
         network.add(Activation::Relu); // 13
-        network.add(candle_nn::conv2d(256, 256, 3, padding_one, vs.pp("14"))?); // 14
+        network.add(candle_nn::conv2d(256, 256, 3, padding_one, vs.pp("conv3_3"))?); // 14
         network.add(Activation::Relu); // 15
         network.add(MaxPoolLayer::new(2)?); // 16
 
         // Block 4
-        network.add(candle_nn::conv2d(256, 512, 3, padding_one, vs.pp("17"))?); //17
+        network.add(candle_nn::conv2d(256, 512, 3, padding_one, vs.pp("conv4_1"))?); //17
         network.add(Activation::Relu); // 18
-        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("19"))?); // 19
+        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("conv4_2"))?); // 19
         network.add(Activation::Relu); // 20
-        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("21"))?); // 21
+        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("conv4_3"))?); // 21
         network.add(Activation::Relu); // 22
         network.add(MaxPoolLayer::new(2)?); // 23
 
         // Block 5
-        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("24"))?); // 24
+        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("conv5_1"))?); // 24
         network.add(Activation::Relu); // 25
-        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("26"))?); // 26
+        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("conv5_2"))?); // 26
         network.add(Activation::Relu); // 27
-        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("28"))?); // 28
+        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("conv5_3"))?); // 28
         network.add(Activation::Relu);
         network.add(MaxPoolLayer::new(2)?);
 
@@ -588,9 +588,9 @@ pub fn fit(
                 Segmentation::OneHot,
             )?;
 
-            println!("Before forward:  {}", get_vram()?);
+            println!("Before forward:   {}", get_vram()?);
             let logits = fcn.forward_t(&train_input_tensor, true)?;
-            println!("After  forward:  {}", get_vram()?);
+            println!("After  forward:   {}", get_vram()?);
 
             // Dump an image that was trained on.
             if settings.save_train_mask {
@@ -622,7 +622,7 @@ pub fn fit(
 
             println!("Before backward:  {}", get_vram()?);
             sgd.backward_step(&batch_loss)?;
-            println!("After backward:  {}", get_vram()?);
+            println!("After backward:   {}", get_vram()?);
             let batch_loss_f32 = batch_loss.sum_all()?.to_scalar::<f32>()?;
             sum_loss += batch_loss_f32;
             println!(
@@ -841,11 +841,11 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     match &cli.command {
         Commands::Fit(s) => {
             if let Some(v) = &s.load {
-                varmap.load_into(&v)?;
+                varmap.load_into(&v, false)?;
             }
 
             if let Some(v) = &s.vgg_load {
-                varmap.load_into(&v)?;
+                varmap.load_into(&v, true)?;
             }
 
             let (tensor_samples_train, tensor_samples_val) =
@@ -1030,7 +1030,7 @@ mod test {
         let batch = Tensor::stack(&[&gray, &gray], 0)?;
 
         // Pass that into the network..
-        let r = network.forward(&batch);
+        let r = network.forward_t(&batch, false);
 
         // Do this here to get nice error message without newlines.
         let r = error_unwrap!(r);
