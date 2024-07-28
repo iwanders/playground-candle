@@ -170,10 +170,10 @@ where
 }
 
 pub trait LoadInto {
-    fn load_into<P: AsRef<std::path::Path>>(&self, path: P) -> candle_core::Result<()>;
+    fn load_into<P: AsRef<std::path::Path>>(&self, path: P, detached: bool) -> candle_core::Result<()>;
 }
 impl LoadInto for candle_nn::VarMap {
-    fn load_into<P: AsRef<std::path::Path>>(&self, path: P) -> candle_core::Result<()> {
+    fn load_into<P: AsRef<std::path::Path>>(&self, path: P, detached: bool) -> candle_core::Result<()> {
         let path = path.as_ref();
         let file_data = unsafe { candle_core::safetensors::MmapedSafetensors::new(path)? };
         let mut tensor_data = self.data().lock().unwrap();
@@ -183,9 +183,12 @@ impl LoadInto for candle_nn::VarMap {
             .map(|(n, _)| n)
             .cloned()
             .collect::<Vec<_>>();
+        println!("keys in safetensors: {keys:?}");
         for (name, var) in tensor_data.iter_mut() {
+            println!("Varmap has {name}, contained: {}", keys.contains(name));
             if keys.contains(name) {
                 let data = file_data.load(name, var.device())?;
+                let data = if detached { data.detach() } else { data };
                 if let Err(err) = var.set(&data) {
                     candle_core::bail!("error setting {name} using data from {path:?}: {err}",)
                 }
