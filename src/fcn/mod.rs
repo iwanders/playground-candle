@@ -53,7 +53,7 @@ On vram woes:
     Torch stays stable at 3gb vram, this currently spikes up to 7.8gb.
     
 
-
+/media/ivor/volatile/datasets/voc2011/VOCdevkit/VOC2012 fit --validation-batch-limit 10 --save-val-mask --learning-rate 0.001 --minibatch-size 3 --vgg-load /media/ivor/volatile/dev_models/converted_from_hub/vgg16_vgg16-397923af.safetensors
 */
 
 
@@ -649,6 +649,8 @@ pub fn fit(
             let classified_pixels = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
 
             if settings.save_val_mask {
+                // let sigm = candle_nn::ops::sigmoid(&logits)?;
+                // let zzz = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
                 let img = batch_tensor_to_mask(0, &classified_pixels)?;
                 let img_id = &sample_val[batch_indices[0]].name;
                 img.save(format!("/tmp/val_{epoch:0>5}_{bi:0>2}_{img_id}.png"))?;
