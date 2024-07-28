@@ -22,6 +22,13 @@ The convolution network parameters are taken from [this article][convolution_mni
 Still work in progress.
 
 
+## Notes on Burn
+
+Compile with
+```
+LIBTORCH_CXX11_ABI=0 CC=gcc-13 CXX=g++-13 LIBTORCH=<venv_with_cuda_pytorch>/site-packages/torch LD_LIBRARY_PATH=<venv_with_cuda_pytorch>/site-packages/torch/lib cargo r --release --example mnist  --features tch-gpu
+```
+
 
 ## Misc
 License is MIT OR Apache-2.0.
