@@ -167,7 +167,7 @@ impl ModuleT for VGG16 {
 }
 
 const PASCAL_VOC_CLASSES: usize = 21;
-const FCN32_OUTPUT_SIZE: usize = 9;
+const FCN32_OUTPUT_SIZE: usize = 318;
 
 pub struct FCN32s {
     vgg16: VGG16,
@@ -218,7 +218,7 @@ impl FCN32s {
 
 
         let deconv_config = ConvTranspose2dConfig {
-            padding: 0,
+            padding: 1,
             output_padding: 0,
             stride: 32,
             dilation: 1,
@@ -254,7 +254,8 @@ impl ModuleT for FCN32s {
         let z = self.vgg16.forward_t(&x, train)?;
         let img = self.network.forward_t(&z, train)?;
         // crop off the outer pixels.
-        img.i((.., .., 1..10, 1..10))
+        img.i((.., .., 32..350, 32..350))
+        // Ok(img)
     }
 }
 
@@ -619,7 +620,7 @@ pub fn fit(
             // println!("Batch output truth: {train_output_tensor:?}");
             // println!("Going into backwards step");
 
-
+            /*
             let map_prior : std::collections::HashMap<candle_core::TensorId, Vec<candle_core::TrackedTensor>> = {
                 let m = candle_core::TensorTracker::instance().data().lock().unwrap();
                 // m.clear();
@@ -633,7 +634,7 @@ pub fn fit(
                     count_of_non_dropped_prior += 1;
                     bytes_non_dropped_prior += record.shape.elem_count() * 4;
                 }
-            }
+            }*/
 
 
             println!("  Backward step now \n\n\n\n\n");
@@ -647,7 +648,7 @@ pub fn fit(
                 shuffled_indices.len() / settings.minibatch_size
             );
             if MEMORY_ANALYSIS {
-
+                /*
                 let map_post : std::collections::HashMap<candle_core::TensorId, Vec<candle_core::TrackedTensor>>  = {
                     let m = candle_core::TensorTracker::instance().data().lock().unwrap();
                     (*m).clone()
@@ -727,8 +728,8 @@ pub fn fit(
                 println!("bytes_non_dropped_prior                  : {} MiB",  bytes_non_dropped_prior/ (1024 * 1024));
                 println!("count_of_non_dropped_post                : {} ",  count_of_non_dropped_post);
                 println!("bytes_non_dropped_post                   : {} MiB",  bytes_non_dropped_post/ (1024 * 1024));
-
-                panic!("reached the end of the first step");
+                */
+                // panic!("reached the end of the first step");
             }
         }
         let avg_loss = sum_loss / (batch_count as f32);
