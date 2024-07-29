@@ -192,11 +192,11 @@ impl FCN32s {
         };
 
 
-        network.add(candle_nn::conv2d(512, 4096, 7, padding_one, vs.pp("fcn32_1"))?); // 24
+        network.add(candle_nn::conv2d(512, 4096, 7, padding_one, vs.pp("fc6"))?); // 24
         network.add(Activation::Relu);
         network.add(Dropout::new(0.5));
 
-        network.add(candle_nn::conv2d(4096, 4096, 1, padding_one, vs.pp("fcn32_2"))?); // 24
+        network.add(candle_nn::conv2d(4096, 4096, 1, padding_one, vs.pp("fc7"))?); // 24
         network.add(Activation::Relu);
         network.add(Dropout::new(0.5));
 
@@ -212,7 +212,7 @@ impl FCN32s {
             PASCAL_VOC_CLASSES,
             1,
             padding_zero,
-            vs.pp(format!("classifier")),
+            vs.pp(format!("score_fr")),
         )?);
 
 
@@ -227,7 +227,7 @@ impl FCN32s {
             PASCAL_VOC_CLASSES,
             64,
             deconv_config,
-            vs.pp("deconv5"),
+            vs.pp("upscore"),
         )?);
         /*
         */
@@ -609,7 +609,7 @@ pub fn fit(
             // do proper BCELogitsLoss
             let logit_s = logits.dims()[2];
             let train_output_tensor = train_output_tensor.interpolate2d(logit_s, logit_s)?;
-            let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor)?;
+            let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor, settings.reduction)?;
 
 
             // let sigm = candle_nn::ops::sigmoid(&logits)?;
@@ -807,6 +807,9 @@ pub struct FitSettings {
         default_value("false"))]
     /// Whether or not to save the first evaluation mask to disk.
     save_val_mask: bool,
+
+    #[clap(long, default_value="sum")]
+    reduction: Reduction
 }
 
 #[derive(Args, Debug, Clone)]

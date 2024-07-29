@@ -269,6 +269,12 @@ pub fn get_vram() -> candle_core::Result<CuMem> {
     Ok(Default::default())
 }
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone, clap::ValueEnum)]
+pub enum Reduction{
+    Mean,
+    Sum,
+}
+
 /// Binary cross entropy, no reduction, expects data after sigmoid.
 pub fn binary_cross_entropy(input: &Tensor, target: &Tensor) -> candle_core::Result<Tensor> {
     if input.dtype() != DType::F32 {
@@ -292,9 +298,12 @@ pub fn binary_cross_entropy(input: &Tensor, target: &Tensor) -> candle_core::Res
 }
 
 /// Binary cross entropy, with mean reduction, expects data after sigmoid.
-pub fn binary_cross_entropy_loss(input: &Tensor, target: &Tensor) -> candle_core::Result<Tensor> {
+pub fn binary_cross_entropy_loss(input: &Tensor, target: &Tensor, reduction: Reduction) -> candle_core::Result<Tensor> {
     let r = binary_cross_entropy(input, target)?;
-    r.mean_all()
+    match reduction {
+        Reduction::Sum => r.sum_all(),
+        Reduction::Mean => r.mean_all(),
+    }
 }
 
 /// Binary cross entropy, no reduction, performs sigmoid in computation.
@@ -321,9 +330,13 @@ pub fn binary_cross_entropy_logits(input: &Tensor, target: &Tensor) -> candle_co
 pub fn binary_cross_entropy_logits_loss(
     input: &Tensor,
     target: &Tensor,
+    reduction: Reduction
 ) -> candle_core::Result<Tensor> {
     let r = binary_cross_entropy_logits(input, target)?;
-    r.mean_all()
+    match reduction {
+        Reduction::Sum => r.sum_all(),
+        Reduction::Mean => r.mean_all(),
+    }
 }
 
 pub fn c_u32_one_hot(input: &Tensor, max_count: usize) -> candle_core::Result<Tensor> {
