@@ -54,6 +54,10 @@ On vram woes:
     
 
 /media/ivor/volatile/datasets/voc2011/VOCdevkit/VOC2012 fit --validation-batch-limit 10 --save-val-mask --learning-rate 0.001 --minibatch-size 3 --vgg-load /media/ivor/volatile/dev_models/converted_from_hub/vgg16_vgg16-397923af.safetensors
+
+
+# This is not noise, seems key is the upscale initialisation weights?
+reset; cargo r --release -- /media/ivor/volatile/datasets/voc2011/VOCdevkit/VOC2012 fit --validation-batch-limit 10 --save-val-mask --learning-rate 1e-4 --minibatch-size 3 --vgg-load /tmp/fcn32_pure.safetensors --save-train-mask
 */
 
 
