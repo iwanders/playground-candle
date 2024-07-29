@@ -222,7 +222,7 @@ impl FCN32s {
             stride: 32,
             dilation: 1,
         };
-        network.add(candle_nn::conv::conv_transpose2d(
+        network.add(candle_nn::conv::conv_transpose2d_no_bias(
             PASCAL_VOC_CLASSES,
             PASCAL_VOC_CLASSES,
             64,
