@@ -51,7 +51,7 @@ On vram woes:
         3.36 gb
 
     Torch stays stable at 3gb vram, this currently spikes up to 7.8gb.
-    
+
 
 /media/ivor/volatile/datasets/voc2011/VOCdevkit/VOC2012 fit --validation-batch-limit 10 --save-val-mask --learning-rate 0.001 --minibatch-size 3 --vgg-load /media/ivor/volatile/dev_models/converted_from_hub/vgg16_vgg16-397923af.safetensors
 
@@ -64,8 +64,6 @@ Ah, we need a CrossEntropyLoss implementation, and we need to make that loss fun
 
 And we need a good initialisation for that upscale deconvolution, and we need to fix that kernel... somehow.
 */
-
-
 
 /// VGG Network, only the convolution section
 ///
@@ -122,36 +120,102 @@ impl VGG16 {
         network.add(MaxPoolLayer::new(2)?); // 4
 
         // Block 2
-        network.add(candle_nn::conv2d(64, 128, 3, padding_one, vs.pp("conv2_1"))?); // 5
+        network.add(candle_nn::conv2d(
+            64,
+            128,
+            3,
+            padding_one,
+            vs.pp("conv2_1"),
+        )?); // 5
         network.add(Activation::Relu); // 6
-        network.add(candle_nn::conv2d(128, 128, 3, padding_one, vs.pp("conv2_2"))?); // 7
+        network.add(candle_nn::conv2d(
+            128,
+            128,
+            3,
+            padding_one,
+            vs.pp("conv2_2"),
+        )?); // 7
         network.add(Activation::Relu); // 8
         network.add(MaxPoolLayer::new(2)?); // 9
 
         // Block 3
-        network.add(candle_nn::conv2d(128, 256, 3, padding_one, vs.pp("conv3_1"))?); // 10
+        network.add(candle_nn::conv2d(
+            128,
+            256,
+            3,
+            padding_one,
+            vs.pp("conv3_1"),
+        )?); // 10
         network.add(Activation::Relu); // 11
-        network.add(candle_nn::conv2d(256, 256, 3, padding_one, vs.pp("conv3_2"))?); // 12
+        network.add(candle_nn::conv2d(
+            256,
+            256,
+            3,
+            padding_one,
+            vs.pp("conv3_2"),
+        )?); // 12
         network.add(Activation::Relu); // 13
-        network.add(candle_nn::conv2d(256, 256, 3, padding_one, vs.pp("conv3_3"))?); // 14
+        network.add(candle_nn::conv2d(
+            256,
+            256,
+            3,
+            padding_one,
+            vs.pp("conv3_3"),
+        )?); // 14
         network.add(Activation::Relu); // 15
         network.add(MaxPoolLayer::new(2)?); // 16
 
         // Block 4
-        network.add(candle_nn::conv2d(256, 512, 3, padding_one, vs.pp("conv4_1"))?); //17
+        network.add(candle_nn::conv2d(
+            256,
+            512,
+            3,
+            padding_one,
+            vs.pp("conv4_1"),
+        )?); //17
         network.add(Activation::Relu); // 18
-        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("conv4_2"))?); // 19
+        network.add(candle_nn::conv2d(
+            512,
+            512,
+            3,
+            padding_one,
+            vs.pp("conv4_2"),
+        )?); // 19
         network.add(Activation::Relu); // 20
-        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("conv4_3"))?); // 21
+        network.add(candle_nn::conv2d(
+            512,
+            512,
+            3,
+            padding_one,
+            vs.pp("conv4_3"),
+        )?); // 21
         network.add(Activation::Relu); // 22
         network.add(MaxPoolLayer::new(2)?); // 23
 
         // Block 5
-        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("conv5_1"))?); // 24
+        network.add(candle_nn::conv2d(
+            512,
+            512,
+            3,
+            padding_one,
+            vs.pp("conv5_1"),
+        )?); // 24
         network.add(Activation::Relu); // 25
-        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("conv5_2"))?); // 26
+        network.add(candle_nn::conv2d(
+            512,
+            512,
+            3,
+            padding_one,
+            vs.pp("conv5_2"),
+        )?); // 26
         network.add(Activation::Relu); // 27
-        network.add(candle_nn::conv2d(512, 512, 3, padding_one, vs.pp("conv5_3"))?); // 28
+        network.add(candle_nn::conv2d(
+            512,
+            512,
+            3,
+            padding_one,
+            vs.pp("conv5_3"),
+        )?); // 28
         network.add(Activation::Relu);
         network.add(MaxPoolLayer::new(2)?);
 
@@ -190,7 +254,6 @@ impl FCN32s {
         // After https://raw.githubusercontent.com/shelhamer/fcn.berkeleyvision.org/master/voc-fcn32s/train.prototxt
         // into https://ethereon.github.io/netscope/#/editor
 
-
         let norm_config = candle_nn::batch_norm::BatchNormConfig::default();
 
         let padding_one = candle_nn::conv::Conv2dConfig {
@@ -199,7 +262,6 @@ impl FCN32s {
             dilation: 1,
             groups: 1,
         };
-
 
         network.add(candle_nn::conv2d(512, 4096, 7, padding_one, vs.pp("fc6"))?); // 24
         network.add(Activation::Relu);
@@ -224,7 +286,6 @@ impl FCN32s {
             vs.pp(format!("score_fr")),
         )?);
 
-
         let deconv_config = ConvTranspose2dConfig {
             padding: 1,
             output_padding: 0,
@@ -239,7 +300,7 @@ impl FCN32s {
             vs.pp("upscore"),
         )?);
         /*
-        */
+         */
 
         Ok(Self {
             vgg16,
@@ -458,7 +519,6 @@ pub fn batch_tensor_to_mask(index: usize, x: &Tensor) -> anyhow::Result<image::R
 }
 
 impl SampleTensor {
-
     pub fn load(
         sample: voc_dataset::Sample,
         device: &Device,
@@ -541,7 +601,9 @@ pub fn collect_minibatch_input_output(
         })
         .collect::<Vec<_>>();
     let train_output_tensor = Tensor::stack(&train_output, 0)?.detach();
-    let train_output_tensor = train_output_tensor.interpolate2d(FCN32_OUTPUT_SIZE, FCN32_OUTPUT_SIZE)?.detach();
+    let train_output_tensor = train_output_tensor
+        .interpolate2d(FCN32_OUTPUT_SIZE, FCN32_OUTPUT_SIZE)?
+        .detach();
 
     let train_input_tensor = train_input_tensor.to_device(device)?.detach();
     let train_output_tensor = train_output_tensor.to_device(device)?.detach();
@@ -584,7 +646,6 @@ pub fn fit(
             varmap.save(&output_path)?;
         }
 
-
         shuffled_indices.shuffle(&mut rng);
 
         let mut sum_loss = 0.0f32;
@@ -610,7 +671,10 @@ pub fn fit(
                 let img = batch_tensor_to_mask(0, &zzz)?;
                 let img_id = &sample_train[batch_indices[0]].name;
                 img.save(format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}.png"))?;
-                img_tensor_to_png(&train_input_tensor.i(0)?, &format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_image.png"))?;
+                img_tensor_to_png(
+                    &train_input_tensor.i(0)?,
+                    &format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_image.png"),
+                )?;
             }
             // let logits = candle_nn::ops::softmax(&logits, 1)?;
             // let batch_loss = binary_cross_entropy_loss(&logits, &train_output_tensor)?;
@@ -622,14 +686,12 @@ pub fn fit(
 
             // It's not binary, use normal cross entropy.
 
-
             let sigm = candle_nn::ops::sigmoid(&logits)?;
             let batch_loss = (sigm - train_output_tensor)?.mean_all()?;
 
             // println!("Batch logits shape: {logits:?}");
             // println!("Batch output truth: {train_output_tensor:?}");
             // println!("Going into backwards step");
-
 
             println!("Before backward:  {}", get_vram()?);
             sgd.backward_step(&batch_loss)?;
@@ -648,7 +710,10 @@ pub fn fit(
         let mut correct_pixels = 0;
         let mut pixel_count = 0;
         let sample_val_indices = (0..sample_val.len()).collect::<Vec<usize>>();
-        for (bi, batch_indices) in sample_val_indices.chunks(settings.minibatch_size).enumerate() {
+        for (bi, batch_indices) in sample_val_indices
+            .chunks(settings.minibatch_size)
+            .enumerate()
+        {
             let (val_input_tensor, val_output_tensor) = collect_minibatch_input_output(
                 &sample_val,
                 &batch_indices,
@@ -819,8 +884,8 @@ pub struct FitSettings {
     /// Whether or not to save the first evaluation mask to disk.
     save_val_mask: bool,
 
-    #[clap(long, default_value="sum")]
-    reduction: Reduction
+    #[clap(long, default_value = "sum")]
+    reduction: Reduction,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -853,7 +918,6 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
         println!("var: {:?}   {v:?}", v.as_tensor().id())
     }
 
-
     match &cli.command {
         Commands::Fit(s) => {
             if let Some(v) = &s.load {
@@ -866,7 +930,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
 
             let (tensor_samples_train, tensor_samples_val) =
                 create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
-                // create_data(&cli.data_path, &CLASSESS[1..])?;
+            // create_data(&cli.data_path, &CLASSESS[1..])?;
 
             println!("Starting fit");
             fit(

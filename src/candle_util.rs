@@ -170,10 +170,18 @@ where
 }
 
 pub trait LoadInto {
-    fn load_into<P: AsRef<std::path::Path>>(&self, path: P, detached: bool) -> candle_core::Result<()>;
+    fn load_into<P: AsRef<std::path::Path>>(
+        &self,
+        path: P,
+        detached: bool,
+    ) -> candle_core::Result<()>;
 }
 impl LoadInto for candle_nn::VarMap {
-    fn load_into<P: AsRef<std::path::Path>>(&self, path: P, detached: bool) -> candle_core::Result<()> {
+    fn load_into<P: AsRef<std::path::Path>>(
+        &self,
+        path: P,
+        detached: bool,
+    ) -> candle_core::Result<()> {
         let path = path.as_ref();
         let file_data = unsafe { candle_core::safetensors::MmapedSafetensors::new(path)? };
         let mut tensor_data = self.data().lock().unwrap();
@@ -254,7 +262,12 @@ pub struct CuMem {
 }
 impl std::fmt::Display for CuMem {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(fmt, "{}MiB/{}MiB", (self.total - self.available) / (1024 * 1024), self.total / (1024 * 1024))
+        write!(
+            fmt,
+            "{}MiB/{}MiB",
+            (self.total - self.available) / (1024 * 1024),
+            self.total / (1024 * 1024)
+        )
     }
 }
 
@@ -262,7 +275,9 @@ impl std::fmt::Display for CuMem {
 pub fn get_vram() -> candle_core::Result<CuMem> {
     // return Ok(Default::default());
     use candle_core::cuda_backend::cudarc;
-    return cudarc::driver::result::mem_get_info().map_err(|e| candle_core::Error::Cuda(Box::new(e))).map(|(available, total)| CuMem{available, total});
+    return cudarc::driver::result::mem_get_info()
+        .map_err(|e| candle_core::Error::Cuda(Box::new(e)))
+        .map(|(available, total)| CuMem { available, total });
 }
 #[cfg(not(feature = "cuda"))]
 pub fn get_vram() -> candle_core::Result<CuMem> {
@@ -270,7 +285,7 @@ pub fn get_vram() -> candle_core::Result<CuMem> {
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone, clap::ValueEnum)]
-pub enum Reduction{
+pub enum Reduction {
     Mean,
     Sum,
 }
@@ -298,7 +313,11 @@ pub fn binary_cross_entropy(input: &Tensor, target: &Tensor) -> candle_core::Res
 }
 
 /// Binary cross entropy, with mean reduction, expects data after sigmoid.
-pub fn binary_cross_entropy_loss(input: &Tensor, target: &Tensor, reduction: Reduction) -> candle_core::Result<Tensor> {
+pub fn binary_cross_entropy_loss(
+    input: &Tensor,
+    target: &Tensor,
+    reduction: Reduction,
+) -> candle_core::Result<Tensor> {
     let r = binary_cross_entropy(input, target)?;
     match reduction {
         Reduction::Sum => r.sum_all(),
@@ -330,7 +349,7 @@ pub fn binary_cross_entropy_logits(input: &Tensor, target: &Tensor) -> candle_co
 pub fn binary_cross_entropy_logits_loss(
     input: &Tensor,
     target: &Tensor,
-    reduction: Reduction
+    reduction: Reduction,
 ) -> candle_core::Result<Tensor> {
     let r = binary_cross_entropy_logits(input, target)?;
     match reduction {
@@ -365,33 +384,51 @@ pub fn c_u32_one_hot(input: &Tensor, max_count: usize) -> candle_core::Result<Te
     }
 }
 
-pub fn deconvolution_upsample(in_channels: usize, out_channels: usize, kernel: usize) -> candle_core::Result<Tensor> {
-    use candle_core::{IndexOp, Device};
-    let factor = ((kernel + 1)  / 2) as f32;
-    
+pub fn deconvolution_upsample(
+    in_channels: usize,
+    out_channels: usize,
+    kernel: usize,
+) -> candle_core::Result<Tensor> {
+    use candle_core::{Device, IndexOp};
+    let factor = ((kernel + 1) / 2) as f32;
+
     let center = if kernel.rem_euclid(2) == 1 {
         factor - 1.0
     } else {
         factor - 0.5
     };
 
-    let mut z = Tensor::zeros((kernel, kernel), DType::F32, &Device::Cpu)?;
-    for y in 0..kernel {
-        let ry = 1.0f32 - (y as f32 - center).abs() / factor;
-        for x in 0..kernel {
-            let rx = 1.0f32 - (x as f32 - center).abs() / factor;
-            let v = ry * rx;
-            z = z.slice_assign(&[x..=x, y..=y], &Tensor::from_slice(&[v], (1, 1), &Device::Cpu)?)?;
+    let mut k = Tensor::zeros(
+        (in_channels, out_channels, kernel, kernel),
+        DType::F32,
+        &Device::Cpu,
+    )?;
+    for ci in 0..in_channels {
+        for co in 0..out_channels {
+            if ci != co {
+                continue;
+            }
+            for y in 0..kernel {
+                let ry = 1.0f32 - (y as f32 - center).abs() / factor;
+                for x in 0..kernel {
+                    let rx = 1.0f32 - (x as f32 - center).abs() / factor;
+                    let v = ry * rx;
+                    k = k.slice_assign(
+                        &[ci..=ci, co..=co, x..=x, y..=y],
+                        &Tensor::from_slice(&[v], (1, 1, 1, 1), &Device::Cpu)?,
+                    )?;
+                }
+            }
         }
     }
 
-    Ok(z)
+    Ok(k)
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use candle_core::{Device::Cpu, Tensor, Device};
+    use candle_core::{Device, Device::Cpu, Tensor};
     #[test]
     fn test_candle_print() -> anyhow::Result<()> {
         use candle_nn::{Linear, Module};
@@ -554,9 +591,7 @@ mod test {
         let upscale_1_1_3 = deconvolution_upsample(1, 1, 3)?;
         let upscale_1_1_3_v = upscale_1_1_3.flatten_all()?.to_vec1::<f32>()?;
         let e = Tensor::from_slice(
-            &[
-                0.25f32, 0.5, 0.25, 0.5, 1.0, 0.5, 0.25, 0.5, 0.25,
-            ],
+            &[0.25f32, 0.5, 0.25, 0.5, 1.0, 0.5, 0.25, 0.5, 0.25],
             (1, 1, 3, 3),
             &device,
         )?;
@@ -564,7 +599,10 @@ mod test {
         approx_equal_slice!(&upscale_1_1_3_v, &e_v, 0.02);
 
         let e = Tensor::from_slice(
-            &[0.0625f32, 0.1875, 0.1875, 0.0625, 0.1875, 0.5625, 0.5625, 0.1875, 0.1875, 0.5625, 0.5625, 0.1875, 0.0625, 0.1875, 0.1875, 0.0625],
+            &[
+                0.0625f32, 0.1875, 0.1875, 0.0625, 0.1875, 0.5625, 0.5625, 0.1875, 0.1875, 0.5625,
+                0.5625, 0.1875, 0.0625, 0.1875, 0.1875, 0.0625,
+            ],
             (1, 1, 4, 4),
             &device,
         )?;
@@ -573,6 +611,18 @@ mod test {
         let upscale_1_1_4_v = upscale_1_1_4.flatten_all()?.to_vec1::<f32>()?;
         approx_equal_slice!(&upscale_1_1_4_v, &e_v, 0.02);
 
+        let e = Tensor::from_slice(
+            &[
+                0.2500f32, 0.2500, 0.2500, 0.2500, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+                0.0000, 0.0000, 0.2500, 0.2500, 0.2500, 0.2500,
+            ],
+            (2, 2, 2, 2),
+            &device,
+        )?;
+        let e_v = e.flatten_all()?.to_vec1::<f32>()?;
+        let upscale_kernel = deconvolution_upsample(2, 2, 2)?;
+        let upscale_kernel = upscale_kernel.flatten_all()?.to_vec1::<f32>()?;
+        approx_equal_slice!(&upscale_kernel, &e_v, 0.02);
 
         Ok(())
     }
