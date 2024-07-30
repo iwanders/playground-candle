@@ -366,15 +366,26 @@ pub fn c_u32_one_hot(input: &Tensor, max_count: usize) -> candle_core::Result<Te
 }
 
 pub fn deconvolution_upsample(in_channels: usize, out_channels: usize, kernel: usize) -> candle_core::Result<Tensor> {
-    let factor = (kernel + 1)  / 2;
+    use candle_core::{IndexOp, Device};
+    let factor = ((kernel + 1)  / 2) as f32;
     
     let center = if kernel.rem_euclid(2) == 1 {
-        factor as f32 - 1.0
+        factor - 1.0
     } else {
-        factor as f32 - 0.5
+        factor - 0.5
     };
 
-    todo!() // lets finish this another time, it's getting late.
+    let mut z = Tensor::zeros((kernel, kernel), DType::F32, &Device::Cpu)?;
+    for y in 0..kernel {
+        let ry = 1.0f32 - (y as f32 - center).abs() / factor;
+        for x in 0..kernel {
+            let rx = 1.0f32 - (x as f32 - center).abs() / factor;
+            let v = ry * rx;
+            z = z.slice_assign(&[x..=x, y..=y], &Tensor::from_slice(&[v], (1, 1), &Device::Cpu)?)?;
+        }
+    }
+
+    Ok(z)
 }
 
 #[cfg(test)]
@@ -551,6 +562,18 @@ mod test {
         )?;
         let e_v = e.flatten_all()?.to_vec1::<f32>()?;
         approx_equal_slice!(&upscale_1_1_3_v, &e_v, 0.02);
+
+        let e = Tensor::from_slice(
+            &[0.0625f32, 0.1875, 0.1875, 0.0625, 0.1875, 0.5625, 0.5625, 0.1875, 0.1875, 0.5625, 0.5625, 0.1875, 0.0625, 0.1875, 0.1875, 0.0625],
+            (1, 1, 4, 4),
+            &device,
+        )?;
+        let e_v = e.flatten_all()?.to_vec1::<f32>()?;
+        let upscale_1_1_4 = deconvolution_upsample(1, 1, 4)?;
+        let upscale_1_1_4_v = upscale_1_1_4.flatten_all()?.to_vec1::<f32>()?;
+        approx_equal_slice!(&upscale_1_1_4_v, &e_v, 0.02);
+
+
         Ok(())
     }
 }
