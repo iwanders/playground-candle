@@ -61,6 +61,8 @@ reset; cargo r --release -- /media/ivor/volatile/datasets/voc2011/VOCdevkit/VOC2
 
 
 Ah, we need a CrossEntropyLoss implementation, and we need to make that loss function properly ignore the areas classified as unknown in our targets.
+
+And we need a good initialisation for that upscale deconvolution, and we need to fix that kernel... somehow.
 */
 
 
