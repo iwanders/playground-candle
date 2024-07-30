@@ -19,11 +19,11 @@ The convolution network parameters are taken from [this article][convolution_mni
 
 [Paper](https://arxiv.org/pdf/1411.4038)
 
-Not sure if this is working correctly, training is problematic because of [this issue](https://github.com/huggingface/candle/issues/1241), with some changes in the candle's `backprop.rs` the vram usage is bearable (see [comment](https://github.com/huggingface/candle/issues/1241#issuecomment-2254229442)), but it seems that we also accumulate memory over time as we train, so manually restarting training from a checkpoint seems necessary.
-
-Definitely needs preloaded vgg16 weights; `--validation-batch-limit 10 --save-val-mask --learning-rate 0.001 --minibatch-size 3`, more than 3 per minibatch results in out of vram.
+Training is problematic because of [this issue](https://github.com/huggingface/candle/issues/1241), with some changes in the candle's `backprop.rs` the vram usage is bearable (see [comment](https://github.com/huggingface/candle/issues/1241#issuecomment-2254229442)), but it seems that we also accumulate memory over time as we train, so manually restarting training from a checkpoint seems necessary.
 
 Did run into an issue with stride=2 backpropagation, fixed in [this PR](https://github.com/huggingface/candle/pull/2337).
+
+Needs a different loss function, and properly ignore the unknown areas.
 
 ## Notes on Burn
 

@@ -58,6 +58,9 @@ On vram woes:
 
 # This is not noise, seems key is the upscale initialisation weights?
 reset; cargo r --release -- /media/ivor/volatile/datasets/voc2011/VOCdevkit/VOC2012 fit --validation-batch-limit 10 --save-val-mask --learning-rate 1e-4 --minibatch-size 3 --vgg-load /tmp/fcn32_pure.safetensors --save-train-mask
+
+
+Ah, we need a CrossEntropyLoss implementation, and we need to make that loss function properly ignore the areas classified as unknown in our targets.
 */
 
 
@@ -611,13 +614,15 @@ pub fn fit(
             // let batch_loss = binary_cross_entropy_loss(&logits, &train_output_tensor)?;
 
             // do proper BCELogitsLoss
-            let logit_s = logits.dims()[2];
-            let train_output_tensor = train_output_tensor.interpolate2d(logit_s, logit_s)?;
-            let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor, settings.reduction)?;
+            // let logit_s = logits.dims()[2];
+            // let train_output_tensor = train_output_tensor.interpolate2d(logit_s, logit_s)?;
+            // let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor, settings.reduction)?;
+
+            // It's not binary, use normal cross entropy.
 
 
-            // let sigm = candle_nn::ops::sigmoid(&logits)?;
-            // let batch_loss = (sigm - train_output_tensor)?.mean_all()?;
+            let sigm = candle_nn::ops::sigmoid(&logits)?;
+            let batch_loss = (sigm - train_output_tensor)?.mean_all()?;
 
             // println!("Batch logits shape: {logits:?}");
             // println!("Batch output truth: {train_output_tensor:?}");
