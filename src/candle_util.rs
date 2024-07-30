@@ -365,6 +365,18 @@ pub fn c_u32_one_hot(input: &Tensor, max_count: usize) -> candle_core::Result<Te
     }
 }
 
+pub fn deconvolution_upsample(in_channels: usize, out_channels: usize, kernel: usize) -> candle_core::Result<Tensor> {
+    let factor = (kernel + 1)  / 2;
+    
+    let center = if kernel.rem_euclid(2) == 1 {
+        factor as f32 - 1.0
+    } else {
+        factor as f32 - 0.5
+    };
+
+    todo!() // lets finish this another time, it's getting late.
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -517,6 +529,28 @@ mod test {
         assert_eq!(one_hot.shape(), z.shape());
         approx_equal_slice!(&z_v, &one_hot_v, 0.02);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_deconvolution_upscale_kernel() -> candle_core::Result<()> {
+        /*
+        tensor([[[[0.2500, 0.5000, 0.2500],
+                  [0.5000, 1.0000, 0.5000],
+                  [0.2500, 0.5000, 0.2500]]]])
+        */
+        let device = Device::Cpu;
+        let upscale_1_1_3 = deconvolution_upsample(1, 1, 3)?;
+        let upscale_1_1_3_v = upscale_1_1_3.flatten_all()?.to_vec1::<f32>()?;
+        let e = Tensor::from_slice(
+            &[
+                0.25f32, 0.5, 0.25, 0.5, 1.0, 0.5, 0.25, 0.5, 0.25,
+            ],
+            (1, 1, 3, 3),
+            &device,
+        )?;
+        let e_v = e.flatten_all()?.to_vec1::<f32>()?;
+        approx_equal_slice!(&upscale_1_1_3_v, &e_v, 0.02);
         Ok(())
     }
 }
