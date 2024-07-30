@@ -475,7 +475,7 @@ mod test {
         approx_equal_slice!(&expected_v, &loss_v, 0.02);
 
         // Scalar version, which is mean_all;
-        let loss_scalar = binary_cross_entropy_loss(&input_s, &target)?;
+        let loss_scalar = binary_cross_entropy_loss(&input_s, &target, Reduction::Mean)?;
         let loss_a = loss_scalar.to_scalar::<f32>()?;
         println!("loss_a: {loss_a:?}");
         approx_equal!(loss_expected, loss_a, 0.0001);
@@ -488,7 +488,7 @@ mod test {
         approx_equal_slice!(&expected_v, &loss_v, 0.02);
 
         // And finally, the embedded sigmoid, directly to the loss scalar.
-        let loss_scalar = binary_cross_entropy_logits_loss(&input, &target)?;
+        let loss_scalar = binary_cross_entropy_logits_loss(&input, &target, Reduction::Mean)?;
         let loss_a = loss_scalar.to_scalar::<f32>()?;
         println!("loss_a: {loss_a:?}");
         approx_equal!(loss_expected, loss_a, 0.0001);
