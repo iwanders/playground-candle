@@ -1,5 +1,5 @@
 // use candle_core::IndexOp;
-use candle_core::{DType, ModuleT, Tensor};
+use candle_core::{DType, ModuleT, Tensor, Device};
 
 pub mod prelude {
     pub use super::PrintableTensorTrait;
@@ -144,6 +144,36 @@ impl ModuleT for Interpolate2DLayer {
         xs.interpolate2d(self.target_h, self.target_w)
     }
 }
+
+pub struct UpscaleLayer {
+    kernel: Tensor,
+    stride: usize,
+}
+impl UpscaleLayer {
+    pub fn new(kernel: usize, channels: usize, device: &Device) -> candle_core::Result<Self> {
+        let stride = kernel / 2;
+        Ok(UpscaleLayer{
+            kernel: deconvolution_upsample(channels, channels, kernel, device)?.detach(),
+            stride,
+        })
+    }
+}
+
+impl ModuleT for UpscaleLayer {
+    fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
+        let _ = train;
+        let deconv_config = candle_nn::ConvTranspose2dConfig {
+            padding: 1,
+            output_padding: 0,
+            stride: self.stride,
+            dilation: 1,
+        };
+        xs.conv_transpose2d(&self.kernel, deconv_config.padding, deconv_config.output_padding, deconv_config.stride, deconv_config.dilation)
+    }
+}
+
+
+
 
 pub fn load_from_safetensors<P>(
     path: P,
@@ -388,8 +418,9 @@ pub fn deconvolution_upsample(
     in_channels: usize,
     out_channels: usize,
     kernel: usize,
+    device: &Device,
 ) -> candle_core::Result<Tensor> {
-    use candle_core::{Device, IndexOp};
+    // use candle_core::{Device, IndexOp};
     let factor = ((kernel + 1) / 2) as f32;
 
     let center = if kernel.rem_euclid(2) == 1 {
@@ -398,27 +429,39 @@ pub fn deconvolution_upsample(
         factor - 0.5
     };
 
+    println!("building pyramid");
+    let mut pyramid = Tensor::zeros(
+        (kernel, kernel),
+        DType::F32,
+        device,
+    )?;
+
+    for y in 0..kernel {
+        let ry = 1.0f32 - (y as f32 - center).abs() / factor;
+        for x in 0..kernel {
+            let rx = 1.0f32 - (x as f32 - center).abs() / factor;
+            let v = ry * rx;
+            pyramid = pyramid.slice_assign(
+                &[x..=x, y..=y],
+                &Tensor::from_slice(&[v], (1, 1), device)?,
+            )?;
+        }
+    }
+    println!("done building pyramid");
+
     let mut k = Tensor::zeros(
         (in_channels, out_channels, kernel, kernel),
         DType::F32,
-        &Device::Cpu,
+        device,
     )?;
+    println!("building upsample kernel");
     for ci in 0..in_channels {
         for co in 0..out_channels {
+            println!("ci: {ci} co {co}");
             if ci != co {
                 continue;
             }
-            for y in 0..kernel {
-                let ry = 1.0f32 - (y as f32 - center).abs() / factor;
-                for x in 0..kernel {
-                    let rx = 1.0f32 - (x as f32 - center).abs() / factor;
-                    let v = ry * rx;
-                    k = k.slice_assign(
-                        &[ci..=ci, co..=co, x..=x, y..=y],
-                        &Tensor::from_slice(&[v], (1, 1, 1, 1), &Device::Cpu)?,
-                    )?;
-                }
-            }
+            k.slice_set(&pyramid, 2, co)?;
         }
     }
 
@@ -588,7 +631,7 @@ mod test {
                   [0.2500, 0.5000, 0.2500]]]])
         */
         let device = Device::Cpu;
-        let upscale_1_1_3 = deconvolution_upsample(1, 1, 3)?;
+        let upscale_1_1_3 = error_unwrap!(deconvolution_upsample(1, 1, 3, &device));
         let upscale_1_1_3_v = upscale_1_1_3.flatten_all()?.to_vec1::<f32>()?;
         let e = Tensor::from_slice(
             &[0.25f32, 0.5, 0.25, 0.5, 1.0, 0.5, 0.25, 0.5, 0.25],
@@ -607,7 +650,7 @@ mod test {
             &device,
         )?;
         let e_v = e.flatten_all()?.to_vec1::<f32>()?;
-        let upscale_1_1_4 = deconvolution_upsample(1, 1, 4)?;
+        let upscale_1_1_4 = error_unwrap!(deconvolution_upsample(1, 1, 4, &device));
         let upscale_1_1_4_v = upscale_1_1_4.flatten_all()?.to_vec1::<f32>()?;
         approx_equal_slice!(&upscale_1_1_4_v, &e_v, 0.02);
 
@@ -620,10 +663,13 @@ mod test {
             &device,
         )?;
         let e_v = e.flatten_all()?.to_vec1::<f32>()?;
-        let upscale_kernel = deconvolution_upsample(2, 2, 2)?;
+        let upscale_kernel = error_unwrap!(deconvolution_upsample(2, 2, 2, &device));
         let upscale_kernel = upscale_kernel.flatten_all()?.to_vec1::<f32>()?;
         approx_equal_slice!(&upscale_kernel, &e_v, 0.02);
 
+        eprintln!("Going into big kernel creation");
+        let upscale_kernel = error_unwrap!(deconvolution_upsample(21, 21, 64, &device));
+        eprintln!("Done with big kernel creation");
         Ok(())
     }
 }

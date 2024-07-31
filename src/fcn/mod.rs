@@ -286,6 +286,7 @@ impl FCN32s {
             vs.pp(format!("score_fr")),
         )?);
 
+        /*
         let deconv_config = ConvTranspose2dConfig {
             padding: 1,
             output_padding: 0,
@@ -299,6 +300,8 @@ impl FCN32s {
             deconv_config,
             vs.pp("upscore"),
         )?);
+        */
+        network.add(UpscaleLayer::new(64, PASCAL_VOC_CLASSES, device)?);
         /*
          */
 
