@@ -254,6 +254,9 @@ macro_rules! approx_equal {
 #[macro_export]
 macro_rules! approx_equal_slice {
     ($a:expr, $b: expr, $max_error:expr) => {
+        if $a.len() != $b.len() {
+            panic!("a was not equal to b in length (a: {}, b: {})", $a.len(), $b.len());
+        }
         for (i, (a_v, b_v)) in $a.iter().zip($b.iter()).enumerate() {
             let delta = (*a_v - *b_v).abs();
             if delta > $max_error {
@@ -420,6 +423,8 @@ pub fn deconvolution_upsample(
     kernel: usize,
     device: &Device,
 ) -> candle_core::Result<Tensor> {
+    assert_eq!(in_channels, out_channels);
+
     // use candle_core::{Device, IndexOp};
     let factor = ((kernel + 1) / 2) as f32;
 
@@ -429,43 +434,30 @@ pub fn deconvolution_upsample(
         factor - 0.5
     };
 
-    println!("building pyramid");
-    let mut pyramid = Tensor::zeros(
-        (kernel, kernel),
-        DType::F32,
-        device,
-    )?;
-
-    for y in 0..kernel {
-        let ry = 1.0f32 - (y as f32 - center).abs() / factor;
-        for x in 0..kernel {
-            let rx = 1.0f32 - (x as f32 - center).abs() / factor;
-            let v = ry * rx;
-            pyramid = pyramid.slice_assign(
-                &[x..=x, y..=y],
-                &Tensor::from_slice(&[v], (1, 1), device)?,
-            )?;
-        }
-    }
-    println!("done building pyramid");
-
-    let mut k = Tensor::zeros(
-        (in_channels, out_channels, kernel, kernel),
-        DType::F32,
-        device,
-    )?;
-    println!("building upsample kernel");
-    for ci in 0..in_channels {
-        for co in 0..out_channels {
-            println!("ci: {ci} co {co}");
-            if ci != co {
-                continue;
-            }
-            k.slice_set(&pyramid, 2, co)?;
-        }
+    let mut line = vec![];
+    for i in 0..kernel {
+        let ry = 1.0f32 - (i as f32 - center).abs() / factor;
+        line.push(ry);
     }
 
-    Ok(k)
+    let x = Tensor::from_slice(&line[..], line.len(), device)?;
+    
+    let grids_xy = Tensor::meshgrid(&[&x, &x], true)?;
+    let pyramid = (&grids_xy[0] * &grids_xy[1])?;
+
+
+    let zero_kernel = Tensor::zeros((kernel, kernel),
+        DType::F32,
+        device)?;
+
+    let mut rows = vec![];
+    for i in 0..in_channels {
+        let mut r = vec![zero_kernel.clone(); in_channels];
+        r[i] = pyramid.clone();
+        rows.push(Tensor::stack(&r, 0)?);
+    }
+
+    Tensor::stack(&rows, 0)
 }
 
 #[cfg(test)]
@@ -664,6 +656,7 @@ mod test {
         )?;
         let e_v = e.flatten_all()?.to_vec1::<f32>()?;
         let upscale_kernel = error_unwrap!(deconvolution_upsample(2, 2, 2, &device));
+        println!("upscale_kernel: {:?}", upscale_kernel.p());
         let upscale_kernel = upscale_kernel.flatten_all()?.to_vec1::<f32>()?;
         approx_equal_slice!(&upscale_kernel, &e_v, 0.02);
 
