@@ -53,16 +53,10 @@ On vram woes:
     Torch stays stable at 3gb vram, this currently spikes up to 7.8gb.
 
 
-/media/ivor/volatile/datasets/voc2011/VOCdevkit/VOC2012 fit --validation-batch-limit 10 --save-val-mask --learning-rate 0.001 --minibatch-size 3 --vgg-load /media/ivor/volatile/dev_models/converted_from_hub/vgg16_vgg16-397923af.safetensors
-
-
-# This is not noise, seems key is the upscale initialisation weights?
-reset; cargo r --release -- /media/ivor/volatile/datasets/voc2011/VOCdevkit/VOC2012 fit --validation-batch-limit 10 --save-val-mask --learning-rate 1e-4 --minibatch-size 3 --vgg-load /tmp/fcn32_pure.safetensors --save-train-mask
-
-
 Ah, we need a CrossEntropyLoss implementation, and we need to make that loss function properly ignore the areas classified as unknown in our targets.
 
-And we need a good initialisation for that upscale deconvolution, and we need to fix that kernel... somehow.
+Also need to properly zero out classes we don't care about on load.
+
 */
 
 /// VGG Network, only the convolution section
