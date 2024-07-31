@@ -5,7 +5,7 @@ use crate::candle_util::*;
 use candle_core::{DType, Device, IndexOp, Result, Tensor};
 // use candle_nn::ops::log_softmax;
 use candle_nn::{
-    Activation, ConvTranspose2dConfig, Dropout, ModuleT, Optimizer, VarBuilder, VarMap,
+    Activation, Dropout, ModuleT, Optimizer, VarBuilder, VarMap,
 };
 use rayon::prelude::*;
 
@@ -248,7 +248,7 @@ impl FCN32s {
         // After https://raw.githubusercontent.com/shelhamer/fcn.berkeleyvision.org/master/voc-fcn32s/train.prototxt
         // into https://ethereon.github.io/netscope/#/editor
 
-        let norm_config = candle_nn::batch_norm::BatchNormConfig::default();
+        // let norm_config = candle_nn::batch_norm::BatchNormConfig::default();
 
         let padding_one = candle_nn::conv::Conv2dConfig {
             padding: 1,
@@ -445,7 +445,17 @@ const COLORS: [Rgb<u8>; 21] = [
 ];
 const BORDER: Rgb<u8> = Rgb([224, 224, 192]);
 
-pub fn mask_to_tensor(img: &image::RgbImage, device: &Device) -> anyhow::Result<Tensor> {
+pub fn mask_to_tensor(img: &image::RgbImage, device: &Device, categories: Option<&[&str]>,) -> anyhow::Result<Tensor> {
+    let categories: Vec<usize> = if let Some(categories) = categories {
+        let mut c = vec![];
+        for name in categories {
+            let index = CLASSESS.iter().position(|n| n == name).ok_or(anyhow::anyhow!("could not find {name}"))?;
+            c.push(index);
+        }
+        c
+    } else {
+        (0..CLASSESS.len()).collect()
+    };
     // let mut x = Tensor::full(0u32, (1, 224, 224), device)?;
     let mut index_vec = vec![];
     let mut previous = (Rgb([0, 0, 0]), 0);
@@ -461,8 +471,14 @@ pub fn mask_to_tensor(img: &image::RgbImage, device: &Device) -> anyhow::Result<
                     continue;
                 }
                 if let Some(index) = COLORS.iter().position(|z| z == p) {
-                    previous = (*p, index as u32);
-                    index_vec.push(index as u32);
+                    if categories.contains(&index) {
+                        previous = (*p, index as u32);
+                        index_vec.push(index as u32);
+                    } else {
+                        let index = 0;
+                        previous = (*p, index as u32);
+                        index_vec.push(index as u32);
+                    }
                 } else {
                     anyhow::bail!("could not find color {p:?}")
                 }
@@ -496,6 +512,7 @@ impl SampleTensor {
     pub fn load(
         sample: voc_dataset::Sample,
         device: &Device,
+        categories: Option<&[&str]>,
     ) -> std::result::Result<SampleTensor, anyhow::Error> {
         // println!("sample: {sample:?}");
 
@@ -518,7 +535,7 @@ impl SampleTensor {
         let img = ImageReader::open(&segmentation_path)?.decode()?;
         let img = img.resize_exact(224, 224, image::imageops::FilterType::Nearest);
         // let img = img.to_rgb32f();
-        let segmentation = mask_to_tensor(&img.to_rgb8(), device)?.detach();
+        let segmentation = mask_to_tensor(&img.to_rgb8(), device, categories)?.detach();
         if false {
             let back_to_img = tensor_to_mask(&segmentation)?;
             back_to_img.save("/tmp/mask.png")?;
@@ -548,6 +565,7 @@ impl SampleTensor {
         })
     }
 }
+
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum Segmentation {
     OneHot,
@@ -775,7 +793,7 @@ pub fn create_data(
     println!("Loading train");
     let tensor_samples_train_results = samples_train
         .par_iter()
-        .map(|s| SampleTensor::load(s.clone(), &device_storage))
+        .map(|s| SampleTensor::load(s.clone(), &device_storage, Some(categories)))
         .collect::<Vec<_>>();
     let mut tensor_samples_train = vec![];
     for s in tensor_samples_train_results {
@@ -785,7 +803,7 @@ pub fn create_data(
     println!("Loading val");
     let tensor_samples_val_results = samples_val
         .par_iter()
-        .map(|s| SampleTensor::load(s.clone(), &device_storage))
+        .map(|s| SampleTensor::load(s.clone(), &device_storage, Some(categories)))
         .collect::<Vec<_>>();
     let mut tensor_samples_val = vec![];
     for s in tensor_samples_val_results {
