@@ -163,7 +163,7 @@ impl ModuleT for UpscaleLayer {
     fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
         let _ = train;
         let deconv_config = candle_nn::ConvTranspose2dConfig {
-            padding: 1,
+            padding: 0,
             output_padding: 0,
             stride: self.stride,
             dilation: 1,

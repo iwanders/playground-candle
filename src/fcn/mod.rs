@@ -280,24 +280,8 @@ impl FCN32s {
             vs.pp(format!("score_fr")),
         )?);
 
-        /*
-        let deconv_config = ConvTranspose2dConfig {
-            padding: 1,
-            output_padding: 0,
-            stride: 32,
-            dilation: 1,
-        };
-        network.add(candle_nn::conv::conv_transpose2d_no_bias(
-            PASCAL_VOC_CLASSES,
-            PASCAL_VOC_CLASSES,
-            64,
-            deconv_config,
-            vs.pp("upscore"),
-        )?);
-        */
+
         network.add(UpscaleLayer::new(64, PASCAL_VOC_CLASSES, device)?);
-        /*
-         */
 
         Ok(Self {
             vgg16,
@@ -305,13 +289,6 @@ impl FCN32s {
             device: device.clone(),
         })
     }
-
-    /*
-    pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
-        let x = x.to_device(&self.device)?;
-        let z = self.vgg16.forward(&x)?;
-        self.network.forward(&z)
-    }*/
 }
 
 impl ModuleT for FCN32s {
