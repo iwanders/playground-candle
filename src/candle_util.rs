@@ -1,5 +1,6 @@
 // use candle_core::IndexOp;
 use candle_core::{DType, ModuleT, Tensor, Device};
+use candle_nn::ops::log_softmax;
 
 pub mod prelude {
     pub use super::PrintableTensorTrait;
@@ -240,7 +241,7 @@ impl LoadInto for candle_nn::VarMap {
 macro_rules! approx_equal {
     ($a:expr, $b: expr, $max_error:expr) => {
         let delta = ($a - $b).abs();
-        if delta > $max_error {
+        if delta.is_nan() || delta > $max_error {
             panic!(
                 "a: {a:?}, b: {b:?},  delta was {delta}, this exceeded allowed {max_error}.",
                 a = $a,
@@ -321,6 +322,40 @@ pub fn get_vram() -> candle_core::Result<CuMem> {
 pub enum Reduction {
     Mean,
     Sum,
+}
+
+
+
+/// Cross entropy, no reduction, expects data after sigmoid.
+pub fn cross_entropy(input: &Tensor, target: &Tensor) -> candle_core::Result<Tensor> {
+    if input.dtype() != DType::F32 {
+        candle_core::bail!("input has wrong type, got: {:?}", input.dtype());
+    }
+    if target.dtype() != DType::F32 {
+        candle_core::bail!("target has wrong type, got: {:?}", target.dtype());
+    }
+    let device = target.device();
+
+    let y_pred = log_softmax(input, 1)?;
+
+    let eps = Tensor::full(1e-5f32, (), &device)?;
+    // let one = Tensor::full(1.0f32, (), &device)?;
+    //-np.log(predictions) * targets
+    let y_pred_eps = y_pred.broadcast_add(&eps)?;
+    (y_pred_eps.log()?.neg())?.mul(&target)
+
+}
+
+pub fn cross_entropy_loss(
+    input: &Tensor,
+    target: &Tensor,
+    reduction: Reduction,
+) -> candle_core::Result<Tensor> {
+    let r = cross_entropy(input, target)?;
+    match reduction {
+        Reduction::Sum => r.sum_all(),
+        Reduction::Mean => r.mean_all(),
+    }
 }
 
 /// Binary cross entropy, no reduction, expects data after sigmoid.
@@ -544,6 +579,25 @@ mod test {
             > BCELoss as, by combining the operations into one layer, we take advantage of the
             > log-sum-exp trick for numerical stability.
 
+            print("cross entropy, with ignore -1)")
+            loss_reduction = "mean" if False else "sum"
+            criterion = nn.CrossEntropyLoss(ignore_index=-1, reduction=loss_reduction)
+
+            input = tensor([[[[ 2.8929, 0.5],
+                              [0.4709, 0.1996]],
+                             [[ 1.8929, 1.0923],
+                              [0.4709, 0.1]]]], requires_grad=True)
+            print(input.shape)
+            target = tensor([[[[ 1.0, 0.0],
+                                [1.0, 0.0]],
+                              [[ 0.0, -1.0],
+                                [0.0, 1.0]]]])
+            loss = criterion(input, target)
+            print(f"loss:          {loss}")
+
+            torch.Size([1, 2, 2, 2])
+            loss:          1.7505955696105957
+
         */
 
         #[rustfmt::skip]
@@ -588,6 +642,29 @@ mod test {
         println!("loss_a: {loss_a:?}");
         approx_equal!(loss_expected, loss_a, 0.0001);
 
+        // Non binary one.
+
+        #[rustfmt::skip]
+        let input = Tensor::from_slice(&[ 2.8929, 0.5f32,
+                                          0.4709, 0.1996,
+                                          1.8929, 1.0923,
+                                          0.4709, 0.1], (1, 2, 2, 2), &device)?;
+        
+        #[rustfmt::skip]
+        let target = Tensor::from_slice(&[1.0,  0.0f32,
+                                          1.0,  0.0,
+                                          0.0, -1.0,
+                                          0.0,  1.0], (1, 2, 2, 2), &device)?;
+        
+        let cross_entropy_loss_expected = 1.3103723526000977f32;
+        // loss_reduction = "mean" if False else "sum"
+        // criterion = nn.CrossEntropyLoss(ignore_index=-1, reduction=loss_reduction)
+        let ce_loss = cross_entropy_loss(&input, &target, Reduction::Sum)?;
+        let ce_loss = ce_loss.to_scalar::<f32>()?;
+        println!("ce_loss: {ce_loss:?}");
+        println!("cross_entropy_loss_expected: {cross_entropy_loss_expected:?}");
+        approx_equal!(cross_entropy_loss_expected, ce_loss, 0.0001);
+        
         Ok(())
     }
 

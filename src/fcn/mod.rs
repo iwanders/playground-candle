@@ -3,7 +3,6 @@ use crate::candle_util::SequentialT;
 // use candle_core::bail;
 use crate::candle_util::*;
 use candle_core::{DType, Device, IndexOp, Result, Tensor};
-// use candle_nn::ops::log_softmax;
 use candle_nn::{
     Activation, Dropout, ModuleT, Optimizer, VarBuilder, VarMap,
 };
