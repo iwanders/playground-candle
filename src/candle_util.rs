@@ -336,14 +336,10 @@ pub fn cross_entropy(input: &Tensor, target: &Tensor) -> candle_core::Result<Ten
     }
     let device = target.device();
 
+    // -(label * (log_softmax(pred))).sum()
     let y_pred = log_softmax(input, 1)?;
-
-    let eps = Tensor::full(1e-5f32, (), &device)?;
-    // let one = Tensor::full(1.0f32, (), &device)?;
-    //-np.log(predictions) * targets
-    let y_pred_eps = y_pred.broadcast_add(&eps)?;
-    (y_pred_eps.log()?.neg())?.mul(&target)
-
+    let prod = (target * y_pred)?;
+    prod.neg()
 }
 
 pub fn cross_entropy_loss(
