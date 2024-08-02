@@ -1089,7 +1089,8 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                 let scale = PxScale::from(line_height);
 
                 let y = (i as f32 * line_height) as i32;
-                let rect = imageproc::rect::Rect::at(0, y as i32).of_size(image.width(), line_height as u32);
+                let rect = imageproc::rect::Rect::at(0, y as i32)
+                    .of_size(image.width(), line_height as u32);
                 imageproc::drawing::draw_filled_rect_mut(&mut image, rect, color);
 
                 draw_text_mut(
