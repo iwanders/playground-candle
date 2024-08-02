@@ -1,5 +1,5 @@
 // use candle_core::IndexOp;
-use candle_core::{DType, ModuleT, Tensor, Device};
+use candle_core::{DType, Device, ModuleT, Tensor};
 use candle_nn::ops::log_softmax;
 
 pub mod prelude {
@@ -153,7 +153,7 @@ pub struct UpscaleLayer {
 impl UpscaleLayer {
     pub fn new(kernel: usize, channels: usize, device: &Device) -> candle_core::Result<Self> {
         let stride = kernel / 2;
-        Ok(UpscaleLayer{
+        Ok(UpscaleLayer {
             kernel: deconvolution_upsample(channels, channels, kernel, device)?.detach(),
             stride,
         })
@@ -169,12 +169,15 @@ impl ModuleT for UpscaleLayer {
             stride: self.stride,
             dilation: 1,
         };
-        xs.conv_transpose2d(&self.kernel, deconv_config.padding, deconv_config.output_padding, deconv_config.stride, deconv_config.dilation)
+        xs.conv_transpose2d(
+            &self.kernel,
+            deconv_config.padding,
+            deconv_config.output_padding,
+            deconv_config.stride,
+            deconv_config.dilation,
+        )
     }
 }
-
-
-
 
 pub fn load_from_safetensors<P>(
     path: P,
@@ -324,8 +327,6 @@ pub enum Reduction {
     Sum,
 }
 
-
-
 /// Cross entropy, no reduction, expects data after sigmoid.
 pub fn cross_entropy(input: &Tensor, target: &Tensor) -> candle_core::Result<Tensor> {
     if input.dtype() != DType::F32 {
@@ -471,14 +472,11 @@ pub fn deconvolution_upsample(
     }
 
     let x = Tensor::from_slice(&line[..], line.len(), device)?;
-    
+
     let grids_xy = Tensor::meshgrid(&[&x, &x], true)?;
     let pyramid = (&grids_xy[0] * &grids_xy[1])?;
 
-
-    let zero_kernel = Tensor::zeros((kernel, kernel),
-        DType::F32,
-        device)?;
+    let zero_kernel = Tensor::zeros((kernel, kernel), DType::F32, device)?;
 
     let mut rows = vec![];
     for i in 0..in_channels {
@@ -644,13 +642,13 @@ mod test {
                                           0.4709, 0.1996,
                                           1.8929, 1.0923,
                                           0.4709, 0.1], (1, 2, 2, 2), &device)?;
-        
+
         #[rustfmt::skip]
         let target = Tensor::from_slice(&[1.0,  0.0f32,
                                           1.0,  0.0,
                                           0.0, -1.0,
                                           0.0,  1.0], (1, 2, 2, 2), &device)?;
-        
+
         let cross_entropy_loss_expected = 1.3103723526000977f32;
         // loss_reduction = "mean" if False else "sum"
         // criterion = nn.CrossEntropyLoss(ignore_index=-1, reduction=loss_reduction)
@@ -659,7 +657,7 @@ mod test {
         println!("ce_loss: {ce_loss:?}");
         println!("cross_entropy_loss_expected: {cross_entropy_loss_expected:?}");
         approx_equal!(cross_entropy_loss_expected, ce_loss, 0.0001);
-        
+
         Ok(())
     }
 

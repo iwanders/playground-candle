@@ -3,9 +3,7 @@ use crate::candle_util::SequentialT;
 // use candle_core::bail;
 use crate::candle_util::*;
 use candle_core::{DType, Device, IndexOp, Result, Tensor};
-use candle_nn::{
-    Activation, Dropout, ModuleT, Optimizer, VarBuilder, VarMap,
-};
+use candle_nn::{Activation, Dropout, ModuleT, Optimizer, VarBuilder, VarMap};
 use rayon::prelude::*;
 
 use std::io::prelude::*;
@@ -279,7 +277,6 @@ impl FCN32s {
             vs.pp(format!("score_fr")),
         )?);
 
-
         network.add(UpscaleLayer::new(64, PASCAL_VOC_CLASSES, device)?);
 
         Ok(Self {
@@ -444,11 +441,18 @@ const COLORS: [Rgb<u8>; 21] = [
 ];
 const BORDER: Rgb<u8> = Rgb([224, 224, 192]);
 
-pub fn mask_to_tensor(img: &image::RgbImage, device: &Device, categories: Option<&[&str]>,) -> anyhow::Result<Tensor> {
+pub fn mask_to_tensor(
+    img: &image::RgbImage,
+    device: &Device,
+    categories: Option<&[&str]>,
+) -> anyhow::Result<Tensor> {
     let categories: Vec<usize> = if let Some(categories) = categories {
         let mut c = vec![];
         for name in categories {
-            let index = CLASSESS.iter().position(|n| n == name).ok_or(anyhow::anyhow!("could not find {name}"))?;
+            let index = CLASSESS
+                .iter()
+                .position(|n| n == name)
+                .ok_or(anyhow::anyhow!("could not find {name}"))?;
             c.push(index);
         }
         c
@@ -661,7 +665,6 @@ pub fn fit(
 
             // Dump an image that was trained on.
             if settings.save_train_mask {
-                
                 let img_id = &sample_train[batch_indices[0]].name;
                 {
                     let sigm = candle_nn::ops::log_softmax(&logits, 1)?;
@@ -672,7 +675,9 @@ pub fn fit(
                 {
                     let zzz = train_output_tensor.argmax_keepdim(1)?; // get maximum in the class dimension
                     let img = batch_tensor_to_mask(0, &zzz)?;
-                    img.save(format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_target.png"))?;
+                    img.save(format!(
+                        "/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_target.png"
+                    ))?;
                 }
                 img_tensor_to_png(
                     &train_input_tensor.i(0)?,
@@ -714,7 +719,9 @@ pub fn fit(
                 let sigm = candle_nn::ops::log_softmax(&logits, 1)?;
                 let zzz = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
                 let img = batch_tensor_to_mask(0, &zzz)?;
-                img.save(format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_post_train.png"))?;
+                img.save(format!(
+                    "/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_post_train.png"
+                ))?;
             }
         }
         let avg_loss = sum_loss / (batch_count as f32);
