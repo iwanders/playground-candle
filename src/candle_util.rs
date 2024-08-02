@@ -334,7 +334,6 @@ pub fn cross_entropy(input: &Tensor, target: &Tensor) -> candle_core::Result<Ten
     if target.dtype() != DType::F32 {
         candle_core::bail!("target has wrong type, got: {:?}", target.dtype());
     }
-    let device = target.device();
 
     // -(label * (log_softmax(pred))).sum()
     let y_pred = log_softmax(input, 1)?;

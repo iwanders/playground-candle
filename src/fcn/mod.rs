@@ -623,6 +623,12 @@ pub fn fit(
     }
     println!("Fitting with {settings:#?}");
 
+    if let Some(train_limit) = settings.train_on_first_n {
+        for v in shuffled_indices.iter_mut() {
+            *v = v.rem_euclid(train_limit);
+        }
+    }
+
     println!("Before first epoch:  {}", get_vram()?);
     // sgd doesn't support momentum, but it would be 0.9
     let mut sgd = candle_nn::SGD::new(varmap.all_vars(), settings.learning_rate)?;
@@ -655,13 +661,19 @@ pub fn fit(
 
             // Dump an image that was trained on.
             if settings.save_train_mask {
-                // https://github.com/huggingface/candle/blob/2489a606fe1a66519da37e4237907926c1ee48a7/candle-examples/examples/vgg/main.rs#L58-L60
-                // Should this be softmax?
-                let sigm = candle_nn::ops::sigmoid(&logits)?;
-                let zzz = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
-                let img = batch_tensor_to_mask(0, &zzz)?;
+                
                 let img_id = &sample_train[batch_indices[0]].name;
-                img.save(format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}.png"))?;
+                {
+                    let sigm = candle_nn::ops::log_softmax(&logits, 1)?;
+                    let zzz = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
+                    let img = batch_tensor_to_mask(0, &zzz)?;
+                    img.save(format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_pred.png"))?;
+                }
+                {
+                    let zzz = train_output_tensor.argmax_keepdim(1)?; // get maximum in the class dimension
+                    let img = batch_tensor_to_mask(0, &zzz)?;
+                    img.save(format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_target.png"))?;
+                }
                 img_tensor_to_png(
                     &train_input_tensor.i(0)?,
                     &format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_image.png"),
@@ -675,10 +687,12 @@ pub fn fit(
             // let train_output_tensor = train_output_tensor.interpolate2d(logit_s, logit_s)?;
             // let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor, settings.reduction)?;
 
+            let batch_loss = cross_entropy_loss(&logits, &train_output_tensor, settings.reduction)?;
+
             // It's not binary, use normal cross entropy.
 
-            let sigm = candle_nn::ops::sigmoid(&logits)?;
-            let batch_loss = (sigm - train_output_tensor)?.mean_all()?;
+            // let sigm = candle_nn::ops::sigmoid(&logits)?;
+            // let batch_loss = (sigm - train_output_tensor)?.mean_all()?;
 
             // println!("Batch logits shape: {logits:?}");
             // println!("Batch output truth: {train_output_tensor:?}");
@@ -693,6 +707,15 @@ pub fn fit(
                 "      bi: {bi: >2?} / {}: {batch_loss_f32}",
                 shuffled_indices.len() / settings.minibatch_size
             );
+            if settings.create_post_train_mask {
+                let img_id = &sample_train[batch_indices[0]].name;
+                let z = train_input_tensor.i((0..=0, .., .., ..))?;
+                let logits = fcn.forward_t(&z, false)?;
+                let sigm = candle_nn::ops::log_softmax(&logits, 1)?;
+                let zzz = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
+                let img = batch_tensor_to_mask(0, &zzz)?;
+                img.save(format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_post_train.png"))?;
+            }
         }
         let avg_loss = sum_loss / (batch_count as f32);
 
@@ -863,11 +886,21 @@ pub struct FitSettings {
     /// Limit the number of epochs, default unlimited
     max_epochs: Option<usize>,
 
+    #[arg(long)]
+    /// Limit training to the first n images.
+    train_on_first_n: Option<usize>,
+
     #[clap(long, action = clap::ArgAction::SetTrue,
         default_missing_value("true"),
         default_value("false"))]
     /// Whether or not to save the first training mask to disk.
     save_train_mask: bool,
+
+    #[clap(long, action = clap::ArgAction::SetTrue,
+        default_missing_value("true"),
+        default_value("false"))]
+    /// Whether or not to run inference after the backwards step on the first image.
+    create_post_train_mask: bool,
 
     #[clap(long, action = clap::ArgAction::SetTrue,
         default_missing_value("true"),
