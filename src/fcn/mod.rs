@@ -48,11 +48,12 @@ On vram woes:
         3.36 gb
 
     Torch stays stable at 3gb vram, this currently spikes up to 7.8gb.
+    see https://github.com/huggingface/candle/issues/1241
 
 
-Ah, we need a CrossEntropyLoss implementation, and we need to make that loss function properly ignore the areas classified as unknown in our targets.
 
-Also need to properly zero out classes we don't care about on load.
+    Cross entropy formulation currently does not ignore the border that's marked as hard.
+
 
 */
 
@@ -929,6 +930,7 @@ enum Commands {
     Fit(FitSettings),
     Print(PrintArgs),
     VerifyData,
+    Legend,
 }
 
 pub fn main() -> std::result::Result<(), anyhow::Error> {
@@ -1069,6 +1071,38 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                         )?;
                     }
                 }
+            }
+        }
+        Commands::Legend => {
+            use ab_glyph::{FontVec, PxScale};
+            use imageproc::drawing::draw_text_mut;
+            let mut image = image::RgbImage::new(300, 400);
+            for (i, name) in CLASSESS.iter().enumerate() {
+                let color = COLORS[i];
+                let font_path = "/usr/share/fonts/truetype/ttf-bitstream-vera/Vera.ttf";
+                let data = std::fs::read(font_path)?;
+                let font = FontVec::try_from_vec(data).unwrap_or_else(|_| {
+                    panic!("error constructing a Font from data at {:?}", font_path);
+                });
+
+                let line_height = 20.0;
+                let scale = PxScale::from(line_height);
+
+                let y = (i as f32 * line_height) as i32;
+                let rect = imageproc::rect::Rect::at(0, y as i32).of_size(image.width(), line_height as u32);
+                imageproc::drawing::draw_filled_rect_mut(&mut image, rect, color);
+
+                draw_text_mut(
+                    &mut image,
+                    Rgb([255u8, 255u8, 255u8]),
+                    0,
+                    y,
+                    scale,
+                    &font,
+                    name,
+                );
+                // imageproc::drawing::draw_text_mut
+                image.save("/tmp/legend.png")?;
             }
         }
     }
