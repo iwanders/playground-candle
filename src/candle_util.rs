@@ -168,6 +168,19 @@ impl ModuleT for Interpolate2DLayer {
     }
 }
 
+pub struct Avg2DLayer;
+impl Avg2DLayer {
+    pub fn new() -> candle_core::Result<Avg2DLayer> {
+        Ok(Self)
+    }
+}
+impl ModuleT for Avg2DLayer {
+    fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
+        let _ = train;
+        xs.mean(candle_core::D::Minus1)?.mean(candle_core::D::Minus1)
+    }
+}
+
 pub struct UpscaleLayer {
     kernel: Tensor,
     stride: usize,
