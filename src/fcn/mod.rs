@@ -257,21 +257,6 @@ impl ResNet50 {
     pub fn new(vs: VarBuilder, device: &Device) -> Result<Self> {
         let mut network = SequentialT::new();
 
-        let layers = [3, 4, 6, 3];
-        
-        let cp3s2 = candle_nn::conv::Conv2dConfig {
-            padding: 3,
-            stride: 2,
-            dilation: 1,
-            groups: 1,
-        };
-
-        // Block 1
-        network.add(candle_nn::conv2d(3, 64, 7, cp3s2, vs.pp("conv1_1"))?); // 0
-        network.add(candle_nn::batch_norm::batch_norm(64, candle_nn::BatchNormConfig::default(), vs.pp("bn1"))?); // 1
-        network.add(Activation::Relu); // 2
-        // Todo: Original implementation has padding of 1 in the max pool with stride.
-        network.add(MaxPoolStrideLayer::new(3, 2)?); // 3
 
         fn conv1x1(in_planes: usize, out_planes: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
             candle_nn::conv2d(in_planes, out_planes, 1, Default::default(), vs.clone())
@@ -302,8 +287,8 @@ impl ResNet50 {
             // This is the Bottleneck Block flavour.
             let width = planes * (64 / 64) * 1;
             let mut block = SequentialT::new();
-            block.add(conv1x1(inplanes, width, vs.pp("conv1"))?);
             // size mismatch at line below, in first block.
+            block.add(conv1x1(inplanes, width, vs.pp("conv1"))?);
             block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn1"))?);
             block.add(conv3x3(width, width, stride, vs.pp("conv2"))?);
             block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn2"))?);
@@ -327,6 +312,23 @@ impl ResNet50 {
             }
             Ok(block)
         }
+
+
+        let layers = [3, 4, 6, 3];
+        
+        let cp3s2 = candle_nn::conv::Conv2dConfig {
+            padding: 3,
+            stride: 2,
+            dilation: 1,
+            groups: 1,
+        };
+
+        // Block 1
+        network.add(candle_nn::conv2d(3, 64, 7, cp3s2, vs.pp("conv1_1"))?); // 0
+        network.add(candle_nn::batch_norm::batch_norm(64, candle_nn::BatchNormConfig::default(), vs.pp("bn1"))?); // 1
+        network.add(Activation::Relu); // 2
+        // Todo: Original implementation has padding of 1 in the max pool with stride.
+        network.add(MaxPoolStrideLayer::new(3, 2)?); // 3
 
         network.add(make_layer(64, layers[0], 1, vs.pp("layer0"))?);
         network.add(make_layer(128, layers[1], 2, vs.pp("layer1"))?);
