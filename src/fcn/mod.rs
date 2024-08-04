@@ -237,6 +237,8 @@ impl ModuleT for VGG16 {
     keras; https://github.com/keras-team/keras/blob/v3.3.3/keras/src/applications/resnet.py#L382-L418
     torch; https://github.com/pytorch/vision/blob/61bd547af1e26e5d1781a800391aa616df8de31f/torchvision/models/resnet.py#L736-L763
     roughly following the torch implementation.
+
+    print(torchvision.models.resnet50())
 */
 
 pub struct ResNet50 {
@@ -259,56 +261,92 @@ impl ResNet50 {
 
 
         fn conv1x1(in_planes: usize, out_planes: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
-            candle_nn::conv2d(in_planes, out_planes, 1, Default::default(), vs.clone())
+            candle_nn::conv2d_no_bias(in_planes, out_planes, 1, Default::default(), vs.clone())
         }
         fn conv3x3(in_planes: usize, out_planes: usize, stride: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
             let c = candle_nn::conv::Conv2dConfig {
                 stride,
+                padding: 1,
                 ..Default::default()
             };
-            candle_nn::conv2d(in_planes, out_planes, 3, c, vs.clone())
+            candle_nn::conv2d_no_bias(in_planes, out_planes, 3, c, vs.clone())
         }
 
         struct BottleneckBlock {
             pub block: SequentialT,
+            pub downsample: Option<SequentialT>,
         }
         impl ModuleT for BottleneckBlock {
             fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
-                println!("block");
-                let ident = xs.clone();
+                let ident = if let Some(ds) = self.downsample.as_ref() {
+                    ds.forward_t(xs, train)?
+                } else {
+                    xs.clone()
+                };
                 let out = self.block.forward_t(xs, train)?;
+                println!("going to addition");
                 let res = out.add(&ident)?;
                 Ok(res)
             }
         }
 
         const BOTTLENECK_EXPANSION: usize = 4;
-        fn create_block(inplanes: usize, planes: usize, stride: usize, vs: VarBuilder) -> Result<BottleneckBlock> {
+        fn create_block(inplanes: usize, planes: usize, stride: usize, vs: VarBuilder, downsample: Option<SequentialT>) -> Result<BottleneckBlock> {
             // This is the Bottleneck Block flavour.
             let width = planes * (64 / 64) * 1;
             let mut block = SequentialT::new();
+            block.set_prefix(&vs.prefix());
             // size mismatch at line below, in first block.
             block.add(conv1x1(inplanes, width, vs.pp("conv1"))?);
+            let prefix = vs.prefix();
+            println!("{prefix}: conv1x1 {inplanes} {width}");
             block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn1"))?);
+            println!("{prefix}: batch_norm {width}");
             block.add(conv3x3(width, width, stride, vs.pp("conv2"))?);
+            println!("{prefix}: conv3x3 {width} {width} {stride}");
             block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn2"))?);
+            println!("{prefix}: batch_norm {width}");
             block.add(conv1x1(width, planes * BOTTLENECK_EXPANSION, vs.pp("conv3"))?);
-            block.add(candle_nn::batch_norm::batch_norm(planes * BOTTLENECK_EXPANSION, candle_nn::BatchNormConfig::default(), vs.pp("bn3"))?);
-            Ok(BottleneckBlock{ block })
+            let final_out = planes * BOTTLENECK_EXPANSION;
+            println!("{prefix}: conv1x1 {width} {} {stride}", final_out);
+            block.add(candle_nn::batch_norm::batch_norm(final_out, candle_nn::BatchNormConfig::default(), vs.pp("bn3"))?);
+            println!("{prefix}: batch_norm {final_out}");
+            println!();
+            Ok(BottleneckBlock{ block, downsample })
         }
 
 
         // Okay, we now reached the 'layer' section.
-        fn make_layer(planes: usize, layer_count: usize, stride: usize, vs: VarBuilder) -> Result<SequentialT> {
+        fn make_layer(inplanes: &[usize], planes: usize, layer_count: usize, stride: usize, vs: VarBuilder) -> Result<SequentialT> {
             let _ = stride;
             // Some complex stuff here with dilation and stride values.
             // Dilation will always be false for normal resnet 50?
             // Ignore that downsample layer for now.
             let mut block = SequentialT::new();
-            let inplanes = planes * BOTTLENECK_EXPANSION;
-            for _i in 0..layer_count {
-                block.add(create_block(inplanes, planes, stride, vs.clone())?);
-                block.add(Activation::Relu); // 13
+            block.set_prefix(&vs.prefix());
+            // let inplanes = planes * BOTTLENECK_EXPANSION;
+            let ds = {
+                let mut ds = SequentialT::new();
+                let prefix = vs.prefix();
+                let out = *inplanes.last().unwrap();
+                // ds.add(conv1x1(inplanes[0], out, vs.pp("downsample").pp(0))?);
+                let c = candle_nn::conv::Conv2dConfig {
+                    stride: 1,
+                    ..Default::default()
+                };
+                ds.add(candle_nn::conv2d_no_bias(inplanes[0], out, 1, c, vs.pp("downsample").pp(0))?);
+                println!("{prefix} ds: conv2d_no_bias {} {out}", inplanes[0]);
+                ds.add(candle_nn::batch_norm::batch_norm(out, candle_nn::BatchNormConfig::default(), vs.pp("downsample").pp(1))?);
+                println!("{prefix} ds: batch_norm {out}");
+                ds
+            };
+
+            let stride1 = 1;
+            block.add(create_block(inplanes[0], planes, stride1, vs.pp("block0"), Some(ds))?);
+            block.add(Activation::Relu);
+            for i in 1..layer_count {
+                block.add(create_block(inplanes[i], planes, stride, vs.pp(format!("block{i}")), None)?);
+                block.add(Activation::Relu);
             }
             Ok(block)
         }
@@ -330,10 +368,11 @@ impl ResNet50 {
         // Todo: Original implementation has padding of 1 in the max pool with stride.
         network.add(MaxPoolStrideLayer::new(3, 2)?); // 3
 
-        network.add(make_layer(64, layers[0], 1, vs.pp("layer0"))?);
-        network.add(make_layer(128, layers[1], 2, vs.pp("layer1"))?);
-        network.add(make_layer(256, layers[2], 2, vs.pp("layer2"))?);
-        network.add(make_layer(512, layers[3], 2, vs.pp("layer3"))?);
+        network.add(make_layer(&[64, 256, 256], 64, layers[0], 1, vs.pp("layer1"))?);
+        network.add(make_layer(&[256, 512, 512, 512], 128, layers[1], 2, vs.pp("layer2"))?);
+        network.add(PanicLayer::new("got here"));
+        // network.add(make_layer(&[512, 1024, 1024, 1024, 1024, 1024], 256, layers[2], 2, vs.pp("layer3"))?);
+        // network.add(make_layer(512, layers[3], 2, vs.pp("layer3"))?);
         // AdaptiveAvgPool2d uhh, we don't have this? 
         // But it's output size 1 by 1? Probably the same as meaning the last two dimensions?
         network.add(Avg2DLayer::new()?);
