@@ -102,16 +102,13 @@ impl SequentialT {
     pub fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
         let mut xs = xs.clone();
         for layer in self.layers.iter() {
+            println!("layer!");
             xs = (**layer).forward_t(&xs, train)?
         }
         Ok(xs)
     }
     pub fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor> {
-        let mut xs = xs.clone();
-        for layer in self.layers.iter() {
-            xs = (**layer).forward_t(&xs, false)?
-        }
-        Ok(xs)
+        self.forward_t(xs, false)
     }
 }
 impl ModuleT for SequentialT {

@@ -274,10 +274,14 @@ impl ResNet50 {
         network.add(MaxPoolStrideLayer::new(3, 2)?); // 3
 
         fn conv1x1(in_planes: usize, out_planes: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
-            candle_nn::conv2d(in_planes, out_planes, 1, Default::default(), vs.pp(""))
+            candle_nn::conv2d(in_planes, out_planes, 1, Default::default(), vs.clone())
         }
-        fn conv3x3(in_planes: usize, out_planes: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
-            candle_nn::conv2d(in_planes, out_planes, 3, Default::default(), vs.pp(""))
+        fn conv3x3(in_planes: usize, out_planes: usize, stride: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
+            let c = candle_nn::conv::Conv2dConfig {
+                stride,
+                ..Default::default()
+            };
+            candle_nn::conv2d(in_planes, out_planes, 3, c, vs.clone())
         }
 
         struct BottleneckBlock {
@@ -285,6 +289,7 @@ impl ResNet50 {
         }
         impl ModuleT for BottleneckBlock {
             fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
+                println!("block");
                 let ident = xs.clone();
                 let out = self.block.forward_t(xs, train)?;
                 let res = out.add(&ident)?;
@@ -292,20 +297,21 @@ impl ResNet50 {
             }
         }
 
-        fn create_block(inplanes: usize, planes: usize, vs: VarBuilder) -> Result<BottleneckBlock> {
+        const BOTTLENECK_EXPANSION: usize = 4;
+        fn create_block(inplanes: usize, planes: usize, stride: usize, vs: VarBuilder) -> Result<BottleneckBlock> {
             // This is the Bottleneck Block flavour.
             let width = planes * (64 / 64) * 1;
             let mut block = SequentialT::new();
             block.add(conv1x1(inplanes, width, vs.pp("conv1"))?);
+            // size mismatch at line below, in first block.
             block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn1"))?);
-            block.add(conv3x3(inplanes, width, vs.pp("conv2"))?);
+            block.add(conv3x3(width, width, stride, vs.pp("conv2"))?);
             block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn2"))?);
-            block.add(conv1x1(inplanes, width, vs.pp("conv3"))?);
-            block.add(candle_nn::batch_norm::batch_norm(planes * width, candle_nn::BatchNormConfig::default(), vs.pp("bn3"))?);
+            block.add(conv1x1(width, planes * BOTTLENECK_EXPANSION, vs.pp("conv3"))?);
+            block.add(candle_nn::batch_norm::batch_norm(planes * BOTTLENECK_EXPANSION, candle_nn::BatchNormConfig::default(), vs.pp("bn3"))?);
             Ok(BottleneckBlock{ block })
         }
 
-        const BOTTLENECK_EXPANSION: usize = 4;
 
         // Okay, we now reached the 'layer' section.
         fn make_layer(planes: usize, layer_count: usize, stride: usize, vs: VarBuilder) -> Result<SequentialT> {
@@ -316,16 +322,16 @@ impl ResNet50 {
             let mut block = SequentialT::new();
             let inplanes = planes * BOTTLENECK_EXPANSION;
             for _i in 0..layer_count {
-                block.add(create_block(inplanes, planes, vs.clone())?);
+                block.add(create_block(inplanes, planes, stride, vs.clone())?);
                 block.add(Activation::Relu); // 13
             }
             Ok(block)
         }
 
-        network.add(make_layer(64, layers[0], 1, vs.clone())?);
-        network.add(make_layer(128, layers[1], 2, vs.clone())?);
-        network.add(make_layer(256, layers[2], 2, vs.clone())?);
-        network.add(make_layer(512, layers[3], 2, vs.clone())?);
+        network.add(make_layer(64, layers[0], 1, vs.pp("layer0"))?);
+        network.add(make_layer(128, layers[1], 2, vs.pp("layer1"))?);
+        network.add(make_layer(256, layers[2], 2, vs.pp("layer2"))?);
+        network.add(make_layer(512, layers[3], 2, vs.pp("layer3"))?);
         // AdaptiveAvgPool2d uhh, we don't have this? 
         // But it's output size 1 by 1? Probably the same as meaning the last two dimensions?
         network.add(Avg2DLayer::new()?);
