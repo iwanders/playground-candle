@@ -156,6 +156,24 @@ impl ModuleT for MaxPoolStrideLayer {
     }
 }
 
+
+pub struct ShapePrintLayer {
+    prefix: String,
+}
+impl ShapePrintLayer {
+    pub fn new(prefix: &str) ->  ShapePrintLayer {
+        Self { prefix: prefix.to_owned() }
+    }
+}
+impl ModuleT for ShapePrintLayer {
+    fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
+        let _ = train;
+        println!("{}: {:?}", self.prefix, xs.shape());
+        Ok(xs.clone())
+    }
+}
+
+
 pub struct Interpolate2DLayer {
     target_h: usize,
     target_w: usize,
@@ -195,10 +213,11 @@ impl PanicLayer {
 }
 impl ModuleT for PanicLayer {
     fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
-        let _ = train;
+        let _ = (xs, train);
         panic!("{}", self.msg);
     }
 }
+
 
 pub struct UpscaleLayer {
     kernel: Tensor,
