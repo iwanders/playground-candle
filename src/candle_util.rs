@@ -84,11 +84,12 @@ impl<'a> std::fmt::Debug for PrintableTensor<'a> {
 /// A sequential struct that holds ModuleT instead of Module such that it can be used for training.
 pub struct SequentialT {
     layers: Vec<Box<dyn ModuleT>>,
+    prefix: Option<String>,
 }
 
 impl SequentialT {
     pub fn new() -> Self {
-        Self { layers: vec![] }
+        Self { layers: vec![], prefix: Default::default() }
     }
 
     pub fn add<T: ModuleT + 'static>(&mut self, v: T) {
@@ -101,14 +102,20 @@ impl SequentialT {
 
     pub fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
         let mut xs = xs.clone();
-        for layer in self.layers.iter() {
-            println!("layer!");
+        for (i, layer) in self.layers.iter().enumerate() {
+            if let Some(prefix) = self.prefix.as_ref() {
+                println!("{prefix} {i}");
+            }
             xs = (**layer).forward_t(&xs, train)?
         }
         Ok(xs)
     }
     pub fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor> {
         self.forward_t(xs, false)
+    }
+
+    pub fn set_prefix(&mut self, s: &str){
+        self.prefix = Some(s.to_owned());
     }
 }
 impl ModuleT for SequentialT {
@@ -175,6 +182,21 @@ impl ModuleT for Avg2DLayer {
     fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
         let _ = train;
         xs.mean(candle_core::D::Minus1)?.mean(candle_core::D::Minus1)
+    }
+}
+
+pub struct PanicLayer{
+    msg: String
+}
+impl PanicLayer {
+    pub fn new(msg: &str) -> PanicLayer {
+        PanicLayer{msg: msg.to_owned()}
+    }
+}
+impl ModuleT for PanicLayer {
+    fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
+        let _ = train;
+        panic!("{}", self.msg);
     }
 }
 
