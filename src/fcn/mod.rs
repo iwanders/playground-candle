@@ -239,18 +239,18 @@ impl ModuleT for VGG16 {
     roughly following the torch implementation.
 */
 
-struct ResNet {
+pub struct ResNet50 {
     network: SequentialT,
     device: Device,
 }
 
-impl ResNet {
+impl ResNet50 {
     pub fn from_path<P>(path: P, device: &Device) -> Result<Self>
     where
         P: AsRef<std::path::Path> + Copy,
     {
         let vs = unsafe { VarBuilder::from_mmaped_safetensors(&[path], DType::F32, device)? };
-        let resnet = ResNet::new(vs, device)?;
+        let resnet = ResNet50::new(vs, device)?;
         Ok(resnet)
     }
 
@@ -296,35 +296,46 @@ impl ResNet {
             // This is the Bottleneck Block flavour.
             let width = planes * (64 / 64) * 1;
             let mut block = SequentialT::new();
-            block.add(conv1x1(inplanes, width, vs.clone())?);
+            block.add(conv1x1(inplanes, width, vs.pp("conv1"))?);
             block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn1"))?);
-            block.add(conv3x3(inplanes, width, vs.clone())?);
+            block.add(conv3x3(inplanes, width, vs.pp("conv2"))?);
             block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn2"))?);
-            block.add(conv1x1(inplanes, width, vs.clone())?);
+            block.add(conv1x1(inplanes, width, vs.pp("conv3"))?);
             block.add(candle_nn::batch_norm::batch_norm(planes * width, candle_nn::BatchNormConfig::default(), vs.pp("bn3"))?);
             Ok(BottleneckBlock{ block })
         }
 
+        const BOTTLENECK_EXPANSION: usize = 4;
 
         // Okay, we now reached the 'layer' section.
         fn make_layer(planes: usize, layer_count: usize, stride: usize, vs: VarBuilder) -> Result<SequentialT> {
+            let _ = stride;
             // Some complex stuff here with dilation and stride values.
             // Dilation will always be false for normal resnet 50?
             // Ignore that downsample layer for now.
-            const BOTTLENECK_EXPANSION: usize = 4;
             let mut block = SequentialT::new();
             let inplanes = planes * BOTTLENECK_EXPANSION;
-            for i in 0..layer_count {
+            for _i in 0..layer_count {
                 block.add(create_block(inplanes, planes, vs.clone())?);
                 block.add(Activation::Relu); // 13
             }
             Ok(block)
         }
+
         network.add(make_layer(64, layers[0], 1, vs.clone())?);
         network.add(make_layer(128, layers[1], 2, vs.clone())?);
         network.add(make_layer(256, layers[2], 2, vs.clone())?);
         network.add(make_layer(512, layers[3], 2, vs.clone())?);
-        // AdaptiveAvgPool2d uhh, we don't have this?
+        // AdaptiveAvgPool2d uhh, we don't have this? 
+        // But it's output size 1 by 1? Probably the same as meaning the last two dimensions?
+        network.add(Avg2DLayer::new()?);
+
+        // The fully connected layer would be here.
+        network.add(candle_nn::linear(
+                512 * BOTTLENECK_EXPANSION,
+                PASCAL_VOC_CLASSES,
+                vs.pp(format!("fc1")),
+            )?);
 
         Ok(Self {
             network,
@@ -338,7 +349,7 @@ impl ResNet {
     }
 }
 
-impl ModuleT for ResNet {
+impl ModuleT for ResNet50 {
     fn forward_t(&self, x: &Tensor, train: bool) -> Result<Tensor> {
         let x = x.to_device(&self.device)?;
         self.network.forward_t(&x, train)
@@ -1284,6 +1295,34 @@ mod test {
         let network = FCN32s::new(vgg16, vs, &device);
 
         let network = error_unwrap!(network);
+
+        // Create a dummy image.
+        // Image is 224x224, 3 channels,  make it 0.5 gray
+        let gray = Tensor::full(0.5f32, (3, 224, 224), &device)?;
+
+        // Make a batch of two of these.
+        let batch = Tensor::stack(&[&gray, &gray], 0)?;
+
+        // Pass that into the network..
+        let r = network.forward_t(&batch, false);
+
+        // Do this here to get nice error message without newlines.
+        let r = error_unwrap!(r);
+        let _r = r;
+        eprintln!("r shape: {:?}", _r.shape());
+
+        Ok(())
+    }
+    #[test]
+    fn test_resnet_instantiate() -> Result<()> {
+        let device = Device::Cpu;
+        // let device = Device::new_cuda(0)?;
+
+        let varmap = VarMap::new();
+        let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+        let resnet = ResNet50::new(vs, &device);
+
+        let network = error_unwrap!(resnet);
 
         // Create a dummy image.
         // Image is 224x224, 3 channels,  make it 0.5 gray
