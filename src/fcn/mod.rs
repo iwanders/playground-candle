@@ -230,6 +230,54 @@ impl ModuleT for VGG16 {
     }
 }
 
+/*
+ Resnet 50:
+    https://arxiv.org/pdf/1512.03385
+
+    keras; https://github.com/keras-team/keras/blob/v3.3.3/keras/src/applications/resnet.py#L382-L418
+    torch; https://github.com/pytorch/vision/blob/61bd547af1e26e5d1781a800391aa616df8de31f/torchvision/models/resnet.py#L736-L763
+    roughly following the torch implementation.
+*/
+
+struct ResNet {
+    network: SequentialT,
+    device: Device,
+}
+
+impl ResNet {
+    pub fn from_path<P>(path: P, device: &Device) -> Result<Self>
+    where
+        P: AsRef<std::path::Path> + Copy,
+    {
+        let vs = unsafe { VarBuilder::from_mmaped_safetensors(&[path], DType::F32, device)? };
+        let resnet = ResNet::new(vs, device)?;
+        Ok(resnet)
+    }
+
+    pub fn new(vs: VarBuilder, device: &Device) -> Result<Self> {
+        let mut network = SequentialT::new();
+
+        Ok(Self {
+            network,
+            device: device.clone(),
+        })
+    }
+
+    pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
+        let x = x.to_device(&self.device)?;
+        self.network.forward(&x)
+    }
+}
+
+impl ModuleT for ResNet {
+    fn forward_t(&self, x: &Tensor, train: bool) -> Result<Tensor> {
+        let x = x.to_device(&self.device)?;
+        self.network.forward_t(&x, train)
+    }
+}
+
+
+
 const PASCAL_VOC_CLASSES: usize = 21;
 const FCN32_OUTPUT_SIZE: usize = 318;
 
