@@ -114,6 +114,12 @@ impl SequentialT {
         Ok(xs)
     }
 }
+impl ModuleT for SequentialT {
+    fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
+        SequentialT::forward_t(self, xs, train)
+    }
+}
+
 
 pub struct MaxPoolLayer {
     dim: usize,
@@ -127,6 +133,22 @@ impl ModuleT for MaxPoolLayer {
     fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
         let _ = train;
         xs.max_pool2d(self.dim)
+    }
+}
+
+pub struct MaxPoolStrideLayer {
+    dim: usize,
+    stride: usize,
+}
+impl MaxPoolStrideLayer {
+    pub fn new(sz: usize, stride: usize) -> candle_core::Result<MaxPoolStrideLayer> {
+        Ok(Self { dim: sz, stride})
+    }
+}
+impl ModuleT for MaxPoolStrideLayer {
+    fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
+        let _ = train;
+        xs.max_pool2d_with_stride(self.dim, self.stride)
     }
 }
 
