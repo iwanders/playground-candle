@@ -195,7 +195,7 @@ mod test {
 
     use super::*;
 
-    use crate::{approx_equal, error_unwrap};
+    use crate::{error_unwrap}; // approx_equal, 
     use candle_core::Device;
     use candle_nn::{VarBuilder, VarMap};
     #[test]
@@ -205,9 +205,10 @@ mod test {
 
         let varmap = VarMap::new();
         let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-        let resnet = ResNet50::new(vs, &device);
+        let mut network = error_unwrap!(ResNet50::new(vs.clone(), &device));
+        let desired_classess = 2000;
+        assert!(network.add_clasifier_head(desired_classess, vs).is_ok());
 
-        let network = error_unwrap!(resnet);
 
         // Create a dummy image.
         // Image is 224x224, 3 channels,  make it 0.5 gray
@@ -221,8 +222,9 @@ mod test {
 
         // Do this here to get nice error message without newlines.
         let r = error_unwrap!(r);
-        let _r = r;
-        eprintln!("r shape: {:?}", _r.shape());
+        eprintln!("r shape: {:?}", r.shape());
+        assert_eq!(r.shape().dims()[0], 2);
+        assert_eq!(r.shape().dims()[1], desired_classess);
 
         Ok(())
     }
