@@ -303,12 +303,12 @@ impl ResNet50 {
             block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn1"))?);
             println!("{prefix}: batch_norm {width}");
             block.add(conv3x3(width, width, stride, vs.pp("conv2"))?);
-            println!("{prefix}: conv3x3 {width} {width} {stride}");
+            println!("{prefix}: conv3x3 {width} {width} s{stride}");
             block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn2"))?);
             println!("{prefix}: batch_norm {width}");
             block.add(conv1x1(width, planes * BOTTLENECK_EXPANSION, vs.pp("conv3"))?);
             let final_out = planes * BOTTLENECK_EXPANSION;
-            println!("{prefix}: conv1x1 {width} {} {stride}", final_out);
+            println!("{prefix}: conv1x1 {width} {} s{stride}", final_out);
             block.add(candle_nn::batch_norm::batch_norm(final_out, candle_nn::BatchNormConfig::default(), vs.pp("bn3"))?);
             println!("{prefix}: batch_norm {final_out}");
             println!();
@@ -335,7 +335,7 @@ impl ResNet50 {
                     ..Default::default()
                 };
                 ds.add(candle_nn::conv2d_no_bias(inplanes[0], out, stride, c, vs.pp("downsample").pp(0))?);
-                println!("{prefix} ds: conv2d_no_bias {} {out}", inplanes[0]);
+                println!("{prefix} ds: conv2d_no_bias {} {out} s{stride}", inplanes[0]);
                 ds.add(candle_nn::batch_norm::batch_norm(out, candle_nn::BatchNormConfig::default(), vs.pp("downsample").pp(1))?);
                 println!("{prefix} ds: batch_norm {out}");
                 ds
@@ -345,7 +345,7 @@ impl ResNet50 {
             block.add(create_block(inplanes[0], planes, stride, vs.pp("block0"), Some(ds))?);
             block.add(Activation::Relu);
             for i in 1..layer_count {
-                block.add(create_block(inplanes[i], planes, stride, vs.pp(format!("block{i}")), None)?);
+                block.add(create_block(inplanes[i], planes, 1, vs.pp(format!("block{i}")), None)?);
                 block.add(Activation::Relu);
             }
             Ok(block)
@@ -365,10 +365,7 @@ impl ResNet50 {
         network.add(candle_nn::conv2d(3, 64, 7, cp3s2, vs.pp("conv1_1"))?); // 0
         network.add(candle_nn::batch_norm::batch_norm(64, candle_nn::BatchNormConfig::default(), vs.pp("bn1"))?); // 1
         network.add(Activation::Relu); // 2
-        // Todo: Original implementation has padding of 1 in the max pool with stride.
-        // todo!("probably need that padding here!");
-        // something like:
-        // network.add(Pad2DWithValue::new(1, -100000f32));
+        // In the original, this padding is inside the maxpool.
         network.add(Pad2DWithValueLayer::new(1, -100000f32));
         network.add(MaxPoolStrideLayer::new(3, 2)?); // 3
         network.add(ShapePrintLayer::new("Before layers"));
@@ -376,9 +373,9 @@ impl ResNet50 {
         network.add(make_layer(&[64, 256, 256], 64, layers[0], 1, vs.pp("layer1"))?);
         network.add(ShapePrintLayer::new("After layer 1"));
         network.add(make_layer(&[256, 512, 512, 512], 128, layers[1], 2, vs.pp("layer2"))?);
-        network.add(PanicLayer::new("got here"));
-        // network.add(make_layer(&[512, 1024, 1024, 1024, 1024, 1024], 256, layers[2], 2, vs.pp("layer3"))?);
-        // network.add(make_layer(512, layers[3], 2, vs.pp("layer3"))?);
+        network.add(make_layer(&[512, 1024, 1024, 1024, 1024, 1024], 256, layers[2], 2, vs.pp("layer3"))?);
+        network.add(make_layer(&[1024, 2048, 2048, 2048 ], 512, layers[3], 2, vs.pp("layer4"))?);
+        // network.add(PanicLayer::new("got here"));
         // AdaptiveAvgPool2d uhh, we don't have this? 
         // But it's output size 1 by 1? Probably the same as meaning the last two dimensions?
         network.add(Avg2DLayer::new()?);
