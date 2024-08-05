@@ -1,9 +1,11 @@
 use crate::candle_util::SequentialT;
 use crate::candle_util::*;
 use candle_core::{DType, Device, Result, Tensor};
-use candle_nn::{Activation, ModuleT, VarBuilder};
+use candle_nn::{Activation, ModuleT, VarBuilder, VarMap};
+use super::create_data;
 
 
+use clap::{Args, Parser, Subcommand};
 
 /*
  Resnet 50:
@@ -188,6 +190,83 @@ impl ModuleT for ResNet50 {
 }
 
 
+
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+#[command(propagate_version = true)]
+struct Cli {
+    data_path: std::path::PathBuf,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct Infer {
+    #[arg(long)]
+    /// The checkpoint file to load as initialisation
+    load: Option<std::path::PathBuf>,
+
+
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct PrintArgs {
+    load: std::path::PathBuf,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Run inference using a model.
+    Infer(Infer),
+    /// Print tensors found in safetensor file.
+    Print(PrintArgs),
+}
+
+pub fn main() -> std::result::Result<(), anyhow::Error> {
+    let device = Device::new_cuda(0)?;
+    // let device = Device::Cpu;
+
+    println!("Building network");
+    let varmap = VarMap::new();
+    let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+    let mut network = ResNet50::new(vs.clone(), &device)?;
+    network.add_clasifier_head(21, vs)?;
+
+    let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+    // let network = ResNet50::new(vgg16, vs, &device)?;
+
+    let cli = Cli::parse();
+
+    for v in varmap.all_vars() {
+        println!("var: {:?}   {v:?}", v.as_tensor().id())
+    }
+
+    match &cli.command {
+        Commands::Infer(s) => {
+            if let Some(v) = &s.load {
+                varmap.load_into(&v, false)?;
+            }
+
+
+            let (tensor_samples_train, tensor_samples_val) =
+                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
+            // create_data(&cli.data_path, &CLASSESS[1..])?;
+
+            todo!()
+        }
+        Commands::Print(p) => {
+            let device = Device::Cpu;
+            let z = load_from_safetensors(&p.load, &device)?;
+            for k in z.keys() {
+                println!("{k}");
+            }
+        }
+    }
+
+    Ok(())
+}
 
 
 #[cfg(test)]

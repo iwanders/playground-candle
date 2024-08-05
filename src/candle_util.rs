@@ -324,15 +324,15 @@ impl ModuleT for UpscaleLayer {
 pub fn load_from_safetensors<P>(
     path: P,
     device: &candle_core::Device,
-) -> candle_core::Result<std::collections::HashMap<String, Tensor>>
+) -> candle_core::Result<std::collections::BTreeMap<String, Tensor>>
 where
     P: AsRef<std::path::Path> + Copy,
 {
     // use candle_core::safetensors::Load;
     use candle_core::safetensors::{Load, MmapedSafetensors};
     let tensors = unsafe { MmapedSafetensors::new(path)? };
-    let tensors: std::collections::HashMap<_, _> = tensors.tensors().into_iter().collect();
-    let mut res = std::collections::HashMap::<String, Tensor>::new();
+    let tensors: std::collections::BTreeMap<_, _> = tensors.tensors().into_iter().collect();
+    let mut res = std::collections::BTreeMap::<String, Tensor>::new();
     for (name, _tensor) in tensors.iter() {
         match tensors.get(name) {
             Some(tensor_view) => {
