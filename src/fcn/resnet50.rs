@@ -231,8 +231,8 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     println!("Building network");
     let varmap = VarMap::new();
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    let mut network = ResNet50::new(vs.clone(), &device)?;
-    network.add_clasifier_head(21, vs)?;
+    let mut network = ResNet50::new(vs.pp("backbone"), &device)?;
+    network.add_clasifier_head(21, vs.pp("classifier"))?;
 
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     // let network = ResNet50::new(vgg16, vs, &device)?;
@@ -249,12 +249,12 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                 varmap.load_into(&v, false)?;
             }
 
+            todo!();
 
             let (tensor_samples_train, tensor_samples_val) =
                 create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
             // create_data(&cli.data_path, &CLASSESS[1..])?;
 
-            todo!()
         }
         Commands::Print(p) => {
             let device = Device::Cpu;

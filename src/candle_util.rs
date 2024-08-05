@@ -361,15 +361,20 @@ impl LoadInto for candle_nn::VarMap {
         let path = path.as_ref();
         let file_data = unsafe { candle_core::safetensors::MmapedSafetensors::new(path)? };
         let mut tensor_data = self.data().lock().unwrap();
-        let keys = file_data
+        let mut tensor_data_keys = tensor_data.keys().map(|v| (*v).clone()).collect::<Vec<_>>();
+        tensor_data_keys.sort();
+        // let mut tensor_data: std::collections::BTreeMap<_, _> = tensor_data.iter().collect();
+        let mut keys = file_data
             .tensors()
             .iter()
             .map(|(n, _)| n)
             .cloned()
             .collect::<Vec<_>>();
+        keys.sort();
         println!("keys in safetensors: {keys:?}");
-        for (name, var) in tensor_data.iter_mut() {
-            println!("Varmap has {name}, contained: {}", keys.contains(name));
+        for name in tensor_data_keys.iter() {
+            let var = tensor_data.get_mut(name).unwrap();
+            println!("Varmap has {name}, contained in file: {}", keys.contains(name));
             if keys.contains(name) {
                 let data = file_data.load(name, var.device())?;
                 let data = if detached { data.detach() } else { data };
