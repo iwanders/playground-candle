@@ -247,6 +247,7 @@ pub struct ResNet50 {
 }
 
 impl ResNet50 {
+    const BOTTLENECK_EXPANSION: usize = 4;
     pub fn from_path<P>(path: P, device: &Device) -> Result<Self>
     where
         P: AsRef<std::path::Path> + Copy,
@@ -290,7 +291,6 @@ impl ResNet50 {
             }
         }
 
-        const BOTTLENECK_EXPANSION: usize = 4;
         fn create_block(inplanes: usize, planes: usize, stride: usize, vs: VarBuilder, downsample: Option<SequentialT>) -> Result<BottleneckBlock> {
             // This is the Bottleneck Block flavour.
             let width = planes * (64 / 64) * 1;
@@ -306,8 +306,8 @@ impl ResNet50 {
             println!("{prefix}: conv3x3 {width} {width} s{stride}");
             block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn2"))?);
             println!("{prefix}: batch_norm {width}");
-            block.add(conv1x1(width, planes * BOTTLENECK_EXPANSION, vs.pp("conv3"))?);
-            let final_out = planes * BOTTLENECK_EXPANSION;
+            block.add(conv1x1(width, planes * ResNet50::BOTTLENECK_EXPANSION, vs.pp("conv3"))?);
+            let final_out = planes * ResNet50::BOTTLENECK_EXPANSION;
             println!("{prefix}: conv1x1 {width} {} s{stride}", final_out);
             block.add(candle_nn::batch_norm::batch_norm(final_out, candle_nn::BatchNormConfig::default(), vs.pp("bn3"))?);
             println!("{prefix}: batch_norm {final_out}");
@@ -317,14 +317,14 @@ impl ResNet50 {
 
 
         // Okay, we now reached the 'layer' section.
-        fn make_layer(inplanes: &[usize], planes: usize, layer_count: usize, stride: usize, vs: VarBuilder) -> Result<SequentialT> {
+        fn make_layer(inplanes: &[usize], planes: usize, stride: usize, vs: VarBuilder) -> Result<SequentialT> {
             let _ = stride;
             // Some complex stuff here with dilation and stride values.
             // Dilation will always be false for normal resnet 50?
             // Ignore that downsample layer for now.
             let mut block = SequentialT::new();
             block.set_prefix(&vs.prefix());
-            // let inplanes = planes * BOTTLENECK_EXPANSION;
+            // let inplanes = planes * ResNet50::BOTTLENECK_EXPANSION;
             let ds = {
                 let mut ds = SequentialT::new();
                 let prefix = vs.prefix();
@@ -344,7 +344,7 @@ impl ResNet50 {
 
             block.add(create_block(inplanes[0], planes, stride, vs.pp("block0"), Some(ds))?);
             block.add(Activation::Relu);
-            for i in 1..layer_count {
+            for i in 1..inplanes.len() {
                 block.add(create_block(inplanes[i], planes, 1, vs.pp(format!("block{i}")), None)?);
                 block.add(Activation::Relu);
             }
@@ -352,7 +352,7 @@ impl ResNet50 {
         }
 
 
-        let layers = [3, 4, 6, 3];
+
         
         let cp3s2 = candle_nn::conv::Conv2dConfig {
             padding: 3,
@@ -370,23 +370,14 @@ impl ResNet50 {
         network.add(MaxPoolStrideLayer::new(3, 2)?); // 3
         network.add(ShapePrintLayer::new("Before layers"));
 
-        network.add(make_layer(&[64, 256, 256], 64, layers[0], 1, vs.pp("layer1"))?);
+        network.add(make_layer(&[64, 256, 256], 64, 1, vs.pp("layer1"))?);
         network.add(ShapePrintLayer::new("After layer 1"));
-        network.add(make_layer(&[256, 512, 512, 512], 128, layers[1], 2, vs.pp("layer2"))?);
-        network.add(make_layer(&[512, 1024, 1024, 1024, 1024, 1024], 256, layers[2], 2, vs.pp("layer3"))?);
-        network.add(make_layer(&[1024, 2048, 2048, 2048 ], 512, layers[3], 2, vs.pp("layer4"))?);
+        network.add(make_layer(&[256, 512, 512, 512], 128, 2, vs.pp("layer2"))?);
+        network.add(make_layer(&[512, 1024, 1024, 1024, 1024, 1024], 256, 2, vs.pp("layer3"))?);
+        network.add(make_layer(&[1024, 2048, 2048, 2048 ], 512, 2, vs.pp("layer4"))?);
+
+        // Output of the backbone is here.
         // network.add(PanicLayer::new("got here"));
-        // AdaptiveAvgPool2d uhh, we don't have this? 
-        // But it's output size 1 by 1? Probably the same as meaning the last two dimensions?
-        network.add(Avg2DLayer::new()?);
-
-        // The fully connected layer would be here.
-        network.add(candle_nn::linear(
-                512 * BOTTLENECK_EXPANSION,
-                PASCAL_VOC_CLASSES,
-                vs.pp(format!("fc1")),
-            )?);
-
         Ok(Self {
             network,
             device: device.clone(),
@@ -396,6 +387,21 @@ impl ResNet50 {
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
         let x = x.to_device(&self.device)?;
         self.network.forward(&x)
+    }
+
+    pub fn add_clasifier_head(&mut self, classes:usize, vs: VarBuilder) -> Result<()> {
+        // AdaptiveAvgPool2d uhh, we don't have this? 
+        // But it's output size 1 by 1? Probably the same as meaning the last two dimensions?
+        self.network.add(Avg2DLayer::new()?);
+
+        // The fully connected layer would be here.
+        self.network.add(candle_nn::linear(
+                512 * ResNet50::BOTTLENECK_EXPANSION,
+                classes,
+                vs.pp(format!("fc1")),
+            )?);
+
+        Ok(())
     }
 }
 
