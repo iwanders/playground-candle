@@ -366,9 +366,10 @@ impl ResNet50 {
         network.add(candle_nn::batch_norm::batch_norm(64, candle_nn::BatchNormConfig::default(), vs.pp("bn1"))?); // 1
         network.add(Activation::Relu); // 2
         // Todo: Original implementation has padding of 1 in the max pool with stride.
-        todo!("probably need that padding here!");
+        // todo!("probably need that padding here!");
         // something like:
         // network.add(Pad2DWithValue::new(1, -100000f32));
+        network.add(Pad2DWithValueLayer::new(1, -100000f32));
         network.add(MaxPoolStrideLayer::new(3, 2)?); // 3
         network.add(ShapePrintLayer::new("Before layers"));
 

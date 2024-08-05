@@ -203,6 +203,75 @@ impl ModuleT for Avg2DLayer {
     }
 }
 
+pub trait PadWithValue {
+    /// Pad the input tensor using value along dimension `dim`. This adds `left` elements before the
+    /// input tensor values and `right` elements after.
+    fn pad_with_value<D: candle_core::shape::Dim>(&self, dim: D, left: usize, right: usize, value: f32) -> candle_core::Result<Tensor> ;
+}
+impl PadWithValue for Tensor {
+    fn pad_with_value<D: candle_core::shape::Dim>(&self, dim: D, left: usize, right: usize, value: f32) -> candle_core::Result<Self> {
+        if left == 0 && right == 0 {
+            Ok(self.clone())
+        } else if left == 0 {
+            let dim = dim.to_index(self.shape(), "pad_with_value")?;
+            let mut dims = self.dims().to_vec();
+            dims[dim] = right;
+            let right = Tensor::full(value, dims.as_slice(), self.device())?;
+            Tensor::cat(&[self, &right], dim)
+        } else if right == 0 {
+            let dim = dim.to_index(self.shape(), "pad_with_value")?;
+            let mut dims = self.dims().to_vec();
+            dims[dim] = left;
+            let left = Tensor::full(value, dims.as_slice(),  self.device())?;
+            Tensor::cat(&[&left, self], dim)
+        } else {
+            let dim = dim.to_index(self.shape(), "pad_with_value")?;
+            let mut dims = self.dims().to_vec();
+            dims[dim] = left;
+            let left = Tensor::full(value, dims.as_slice(),   self.device())?;
+            dims[dim] = right;
+            let right = Tensor::full(value, dims.as_slice(),  self.device())?;
+            Tensor::cat(&[&left, self, &right], dim)
+        }
+    }
+}
+
+pub struct PadWithValueLayer{
+    dim: usize,
+    left: usize,
+    right: usize,
+    value: f32,
+}
+impl PadWithValueLayer {
+    pub fn new(dim: usize, left: usize, right: usize, value: f32) -> PadWithValueLayer {
+        PadWithValueLayer{dim, left, right, value}
+    }
+}
+impl ModuleT for PadWithValueLayer {
+    fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
+        let _ = (xs, train);
+        xs.pad_with_value(self.dim, self.left, self.right, self.value)
+    }
+}
+
+pub struct Pad2DWithValueLayer {
+    padding: usize,
+    value: f32,
+}
+impl Pad2DWithValueLayer {
+    pub fn new(padding: usize, value: f32) -> Pad2DWithValueLayer {
+        Pad2DWithValueLayer{padding, value}
+    }
+}
+impl ModuleT for Pad2DWithValueLayer {
+    fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
+        let _ = (xs, train);
+        let horizontal = xs.pad_with_value(candle_core::D::Minus1, self.padding, self.padding, self.value)?;
+        horizontal.pad_with_value(candle_core::D::Minus2, self.padding, self.padding, self.value)
+    }
+}
+
+
 pub struct PanicLayer{
     msg: String
 }
