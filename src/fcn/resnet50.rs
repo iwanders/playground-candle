@@ -111,7 +111,7 @@ impl ResNet50 {
                     stride,
                     ..Default::default()
                 };
-                ds.add(candle_nn::conv2d_no_bias(inplanes[0], out, stride, c, vs.pp("0.downsample").pp(0))?);
+                ds.add(candle_nn::conv2d_no_bias(inplanes[0], out, 1, c, vs.pp("0.downsample").pp(0))?);
                 println!("{prefix} ds: conv2d_no_bias {} {out} s{stride}", inplanes[0]);
 
                 let norm_config = candle_nn::BatchNormConfig {
@@ -158,7 +158,7 @@ impl ResNet50 {
         network.add(ShapePrintLayer::new("After layer 1"));
         network.add(make_layer(&[256, 512, 512, 512], 128, 2, vs.pp("layer2"))?);
         network.add(make_layer(&[512, 1024, 1024, 1024, 1024, 1024], 256, 2, vs.pp("layer3"))?);
-        network.add(make_layer(&[1024, 2048, 2048, 2048 ], 512, 2, vs.pp("layer4"))?);
+        network.add(make_layer(&[1024, 2048, 2048], 512, 2, vs.pp("layer4"))?);
 
         // Output of the backbone is here.
         // network.add(PanicLayer::new("got here"));
