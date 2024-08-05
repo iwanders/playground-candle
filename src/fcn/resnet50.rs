@@ -111,18 +111,25 @@ impl ResNet50 {
                     stride,
                     ..Default::default()
                 };
-                ds.add(candle_nn::conv2d_no_bias(inplanes[0], out, stride, c, vs.pp("downsample").pp(0))?);
+                ds.add(candle_nn::conv2d_no_bias(inplanes[0], out, stride, c, vs.pp("0.downsample").pp(0))?);
                 println!("{prefix} ds: conv2d_no_bias {} {out} s{stride}", inplanes[0]);
-                ds.add(candle_nn::batch_norm::batch_norm(out, candle_nn::BatchNormConfig::default(), vs.pp("downsample").pp(1))?);
+
+                let norm_config = candle_nn::BatchNormConfig {
+                    affine: true,
+                    momentum: 0.1,
+                    eps: 1e-05,
+                    ..Default::default()
+                };
+                ds.add(candle_nn::batch_norm::batch_norm(out, norm_config, vs.pp("0.downsample").pp(1))?);
                 println!("{prefix} ds: batch_norm {out}");
                 ds
             };
 
 
-            block.add(create_block(inplanes[0], planes, stride, vs.pp("block0"), Some(ds))?);
+            block.add(create_block(inplanes[0], planes, stride, vs.pp(0), Some(ds))?);
             block.add(Activation::Relu);
             for i in 1..inplanes.len() {
-                block.add(create_block(inplanes[i], planes, 1, vs.pp(format!("block{i}")), None)?);
+                block.add(create_block(inplanes[i], planes, 1, vs.pp(i), None)?);
                 block.add(Activation::Relu);
             }
             Ok(block)
@@ -139,7 +146,7 @@ impl ResNet50 {
         };
 
         // Block 1
-        network.add(candle_nn::conv2d(3, 64, 7, cp3s2, vs.pp("conv1_1"))?); // 0
+        network.add(candle_nn::conv2d_no_bias(3, 64, 7, cp3s2, vs.pp("conv1"))?); // 0
         network.add(candle_nn::batch_norm::batch_norm(64, candle_nn::BatchNormConfig::default(), vs.pp("bn1"))?); // 1
         network.add(Activation::Relu); // 2
         // In the original, this padding is inside the maxpool.
