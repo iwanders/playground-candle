@@ -3,7 +3,7 @@ use crate::candle_util::*;
 use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::{Activation, ModuleT, VarBuilder, VarMap};
 use super::create_data;
-
+use candle_nn::Dropout;
 
 use clap::{Args, Parser, Subcommand};
 
@@ -34,21 +34,23 @@ impl ResNet50 {
         Ok(resnet)
     }
 
+
+    fn conv1x1(in_planes: usize, out_planes: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
+        candle_nn::conv2d_no_bias(in_planes, out_planes, 1, Default::default(), vs.clone())
+    }
+    fn conv3x3(in_planes: usize, out_planes: usize, stride: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
+        let c = candle_nn::conv::Conv2dConfig {
+            stride,
+            padding: 1,
+            ..Default::default()
+        };
+        candle_nn::conv2d_no_bias(in_planes, out_planes, 3, c, vs.clone())
+    }
+
+
     pub fn new(vs: VarBuilder, device: &Device) -> Result<Self> {
         let mut network = SequentialT::new();
 
-
-        fn conv1x1(in_planes: usize, out_planes: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
-            candle_nn::conv2d_no_bias(in_planes, out_planes, 1, Default::default(), vs.clone())
-        }
-        fn conv3x3(in_planes: usize, out_planes: usize, stride: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
-            let c = candle_nn::conv::Conv2dConfig {
-                stride,
-                padding: 1,
-                ..Default::default()
-            };
-            candle_nn::conv2d_no_bias(in_planes, out_planes, 3, c, vs.clone())
-        }
 
         struct BottleneckBlock {
             pub block: SequentialT,
@@ -74,16 +76,16 @@ impl ResNet50 {
             let mut block = SequentialT::new();
             block.set_prefix(&vs.prefix());
             // size mismatch at line below, in first block.
-            block.add(conv1x1(inplanes, width, vs.pp("conv1"))?);
+            block.add(ResNet50::conv1x1(inplanes, width, vs.pp("conv1"))?);
             let prefix = vs.prefix();
             println!("{prefix}: conv1x1 {inplanes} {width}");
             block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn1"))?);
             println!("{prefix}: batch_norm {width}");
-            block.add(conv3x3(width, width, stride, vs.pp("conv2"))?);
+            block.add(ResNet50::conv3x3(width, width, stride, vs.pp("conv2"))?);
             println!("{prefix}: conv3x3 {width} {width} s{stride}");
             block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn2"))?);
             println!("{prefix}: batch_norm {width}");
-            block.add(conv1x1(width, planes * ResNet50::BOTTLENECK_EXPANSION, vs.pp("conv3"))?);
+            block.add(ResNet50::conv1x1(width, planes * ResNet50::BOTTLENECK_EXPANSION, vs.pp("conv3"))?);
             let final_out = planes * ResNet50::BOTTLENECK_EXPANSION;
             println!("{prefix}: conv1x1 {width} {} s{stride}", final_out);
             block.add(candle_nn::batch_norm::batch_norm(final_out, candle_nn::BatchNormConfig::default(), vs.pp("bn3"))?);
@@ -174,17 +176,19 @@ impl ResNet50 {
     }
 
     pub fn add_clasifier_head(&mut self, classes:usize, vs: VarBuilder) -> Result<()> {
-        // AdaptiveAvgPool2d uhh, we don't have this? 
-        // But it's output size 1 by 1? Probably the same as meaning the last two dimensions?
-        self.network.add(Avg2DLayer::new()?);
-
-        // The fully connected layer would be here.
-        self.network.add(candle_nn::linear(
-                512 * ResNet50::BOTTLENECK_EXPANSION,
-                classes,
-                vs.pp(format!("fc1")),
-            )?);
-
+        // Classifier topology from fcn_resnet50 from torch;
+        // (0): Conv2d(2048, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        // (1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        // (2): ReLU()
+        // (3): Dropout(p=0.1, inplace=False)
+        // (4): Conv2d(512, 21, kernel_size=(1, 1), stride=(1, 1))
+        // let vs = vs.pp("classifier");
+        self.network.add(ResNet50::conv3x3(2048, 512, 1, vs.pp(0))?);
+        self.network.add(candle_nn::batch_norm::batch_norm(512, candle_nn::BatchNormConfig::default(), vs.pp(1))?);
+        self.network.add(Activation::Relu);
+        self.network.add(Dropout::new(0.1));
+        self.network.add(candle_nn::conv2d_no_bias(512, classes, 1, Default::default(), vs.pp(4))?);
+        
         Ok(())
     }
 }
