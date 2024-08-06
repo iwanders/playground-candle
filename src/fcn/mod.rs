@@ -63,18 +63,30 @@ On vram woes:
 
 */
 
+pub enum Backbone {
+    VGG16(VGG16),
+    ResNet50(ResNet50),
+}
+impl ModuleT for Backbone {
+    fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
+        match self {
+            Backbone::VGG16(bb) => bb.forward_t(xs, train),
+            Backbone::ResNet50(bb) => bb.forward_t(xs, train),
+        }
+    }
+}
 
 const PASCAL_VOC_CLASSES: usize = 21;
 const FCN32_OUTPUT_SIZE: usize = 318;
 
 pub struct FCN32s {
-    vgg16: VGG16,
+    backbone: Backbone,
     network: SequentialT,
     device: Device,
 }
 
 impl FCN32s {
-    pub fn new(vgg16: VGG16, vs: VarBuilder, device: &Device) -> Result<Self> {
+    pub fn new(backbone: Backbone, vs: VarBuilder, device: &Device) -> Result<Self> {
         let mut network = SequentialT::new();
 
         // After https://raw.githubusercontent.com/shelhamer/fcn.berkeleyvision.org/master/voc-fcn32s/train.prototxt
@@ -82,40 +94,52 @@ impl FCN32s {
 
         // let norm_config = candle_nn::batch_norm::BatchNormConfig::default();
 
-        let padding_one = candle_nn::conv::Conv2dConfig {
-            padding: 1,
-            stride: 1,
-            dilation: 1,
-            groups: 1,
-        };
+        match &backbone {
+            Backbone::VGG16(_) =>  {
+                let padding_one = candle_nn::conv::Conv2dConfig {
+                    padding: 1,
+                    stride: 1,
+                    dilation: 1,
+                    groups: 1,
+                };
 
-        network.add(candle_nn::conv2d(512, 4096, 7, padding_one, vs.pp("fc6"))?); // 24
-        network.add(Activation::Relu);
-        network.add(Dropout::new(0.5));
+                network.add(candle_nn::conv2d(512, 4096, 7, padding_one, vs.pp("fc6"))?); // 24
+                network.add(Activation::Relu);
+                network.add(Dropout::new(0.5));
 
-        network.add(candle_nn::conv2d(4096, 4096, 1, padding_one, vs.pp("fc7"))?); // 24
-        network.add(Activation::Relu);
-        network.add(Dropout::new(0.5));
+                network.add(candle_nn::conv2d(4096, 4096, 1, padding_one, vs.pp("fc7"))?); // 24
+                network.add(Activation::Relu);
+                network.add(Dropout::new(0.5));
 
-        let padding_zero = candle_nn::conv::Conv2dConfig {
-            padding: 0,
-            stride: 1,
-            dilation: 1,
-            groups: 1,
-        };
+                let padding_zero = candle_nn::conv::Conv2dConfig {
+                    padding: 0,
+                    stride: 1,
+                    dilation: 1,
+                    groups: 1,
+                };
 
-        network.add(candle_nn::conv2d(
-            4096,
-            PASCAL_VOC_CLASSES,
-            1,
-            padding_zero,
-            vs.pp(format!("score_fr")),
-        )?);
+                network.add(candle_nn::conv2d(
+                    4096,
+                    PASCAL_VOC_CLASSES,
+                    1,
+                    padding_zero,
+                    vs.pp(format!("score_fr")),
+                )?);
+            },
+            Backbone::ResNet50(_) => {
+                network.add(ResNet50::conv3x3(2048, 512, 1, vs.pp(0))?);
+                network.add(candle_nn::batch_norm::batch_norm(512, candle_nn::BatchNormConfig::default(), vs.pp(1))?);
+                network.add(Activation::Relu);
+                network.add(Dropout::new(0.1));
+                network.add(candle_nn::conv2d_no_bias(512, PASCAL_VOC_CLASSES, 1, Default::default(), vs.pp(4))?);
+            }
+        }
+
 
         network.add(UpscaleLayer::new(64, PASCAL_VOC_CLASSES, device)?);
 
         Ok(Self {
-            vgg16,
+            backbone,
             network,
             device: device.clone(),
         })
@@ -125,11 +149,11 @@ impl FCN32s {
 impl ModuleT for FCN32s {
     fn forward_t(&self, x: &Tensor, train: bool) -> Result<Tensor> {
         let x = x.to_device(&self.device)?;
-        let z = self.vgg16.forward_t(&x, train)?;
+        let z = self.backbone.forward_t(&x, train)?;
         let img = self.network.forward_t(&z, train)?;
         // crop off the outer pixels.
-        img.i((.., .., 32..350, 32..350))
-        // Ok(img)
+        // img.i((.., .., 32..350, 32..350))
+        Ok(img)
     }
 }
 
@@ -777,7 +801,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     let vgg16 = VGG16::new(vs, &device)?;
 
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    let network = FCN32s::new(vgg16, vs, &device)?;
+    let network = FCN32s::new(Backbone::VGG16(vgg16), vs, &device)?;
 
     let cli = Cli::parse();
 

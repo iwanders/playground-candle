@@ -13,6 +13,7 @@ use clap::{Args, Parser, Subcommand};
 
     keras; https://github.com/keras-team/keras/blob/v3.3.3/keras/src/applications/resnet.py#L382-L418
     torch; https://github.com/pytorch/vision/blob/61bd547af1e26e5d1781a800391aa616df8de31f/torchvision/models/resnet.py#L736-L763
+    fcn_resnet; https://github.com/pytorch/vision/blob/61bd547af1e26e5d1781a800391aa616df8de31f/torchvision/models/segmentation/fcn.py#L102-L173
     roughly following the torch implementation.
 
     print(torchvision.models.resnet50())
@@ -35,10 +36,10 @@ impl ResNet50 {
     }
 
 
-    fn conv1x1(in_planes: usize, out_planes: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
+    pub fn conv1x1(in_planes: usize, out_planes: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
         candle_nn::conv2d_no_bias(in_planes, out_planes, 1, Default::default(), vs.clone())
     }
-    fn conv3x3(in_planes: usize, out_planes: usize, stride: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
+    pub fn conv3x3(in_planes: usize, out_planes: usize, stride: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
         let c = candle_nn::conv::Conv2dConfig {
             stride,
             padding: 1,
@@ -261,11 +262,6 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
             }
 
             todo!();
-
-            let (tensor_samples_train, tensor_samples_val) =
-                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
-            // create_data(&cli.data_path, &CLASSESS[1..])?;
-
         }
         Commands::Print(p) => {
             let device = Device::Cpu;
