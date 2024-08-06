@@ -990,7 +990,7 @@ mod test {
         let vgg16 = error_unwrap!(vgg16);
 
         let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-        let network = FCN32s::new(vgg16, vs, &device);
+        let network = FCN32s::new(Backbone::VGG16(vgg16), vs, &device);
 
         let network = error_unwrap!(network);
 
