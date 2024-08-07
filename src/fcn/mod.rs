@@ -701,6 +701,14 @@ pub fn create_data(
     Ok((tensor_samples_train, tensor_samples_val))
 }
 
+#[derive(clap::ValueEnum, Debug, Clone)] // ArgEnum here
+// #[clap(rename_all = "kebab_case")]
+enum BackBoneOption {
+    Vgg,
+    Resnet,
+}
+
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 #[command(propagate_version = true)]
@@ -718,8 +726,12 @@ pub struct FitSettings {
     load: Option<std::path::PathBuf>,
 
     #[arg(long)]
-    /// The vgg file to load as initialisation
-    vgg_load: Option<std::path::PathBuf>,
+    /// The second file to load as initialisation
+    second_load: Option<std::path::PathBuf>,
+
+    /// The backbone to use, between vgg and resnet.
+    #[arg(short,long, default_value="resnet")]
+    backbone: BackBoneOption,
 
     #[arg(short)]
     #[arg(default_value = "1")]
@@ -815,7 +827,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                 varmap.load_into(&v, false)?;
             }
 
-            if let Some(v) = &s.vgg_load {
+            if let Some(v) = &s.second_load {
                 varmap.load_into(&v, true)?;
             }
 

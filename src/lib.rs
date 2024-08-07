@@ -15,7 +15,7 @@ pub fn main() -> MainResult {
         mnist::network::main()
     }
     */
-    // fcn::main()
-    fcn::resnet50::main()
+    fcn::main()
+    // fcn::resnet50::main()
     // candle_fix::main()
 }
