@@ -152,8 +152,8 @@ impl ModuleT for FCN32s {
         let z = self.backbone.forward_t(&x, train)?;
         let img = self.network.forward_t(&z, train)?;
         // crop off the outer pixels.
-        // img.i((.., .., 32..350, 32..350))
-        Ok(img)
+        img.i((.., .., 32..350, 32..350))
+        // Ok(img)
     }
 }
 
@@ -494,7 +494,12 @@ pub fn fit(
 
     println!("Before first epoch:  {}", get_vram()?);
     // sgd doesn't support momentum, but it would be 0.9
-    let mut sgd = candle_nn::SGD::new(varmap.all_vars(), settings.learning_rate)?;
+    // let mut sgd = candle_nn::SGD::new(varmap.all_vars(), settings.learning_rate)?;
+    let param = candle_nn::ParamsAdamW {
+        lr: settings.learning_rate,
+        ..Default::default()
+    };
+    let mut sgd = candle_nn::AdamW::new(varmap.all_vars(), param)?;
     for epoch in settings.epoch..settings.max_epochs.unwrap_or(usize::MAX) {
         if epoch != settings.epoch && epoch.rem_euclid(settings.save_interval) == 0 {
             // Save the checkpoint.
