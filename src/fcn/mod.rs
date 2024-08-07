@@ -152,8 +152,8 @@ impl ModuleT for FCN32s {
         let z = self.backbone.forward_t(&x, train)?;
         let img = self.network.forward_t(&z, train)?;
         // crop off the outer pixels.
-        img.i((.., .., 32..350, 32..350))
-        // Ok(img)
+        // img.i((.., .., 32..350, 32..350))
+        Ok(img)
     }
 }
 
@@ -455,9 +455,11 @@ pub fn collect_minibatch_input_output(
         })
         .collect::<Vec<_>>();
     let train_output_tensor = Tensor::stack(&train_output, 0)?.detach();
+    /*
     let train_output_tensor = train_output_tensor
         .interpolate2d(FCN32_OUTPUT_SIZE, FCN32_OUTPUT_SIZE)?
         .detach();
+    */
 
     let train_input_tensor = train_input_tensor.to_device(device)?.detach();
     let train_output_tensor = train_output_tensor.to_device(device)?.detach();
@@ -548,12 +550,15 @@ pub fn fit(
                     &format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_image.png"),
                 )?;
             }
+            // Scale logits to ensure equal size to output.
+            let logit_s = logits.dims()[2];
+            let train_output_tensor = train_output_tensor.interpolate2d(logit_s, logit_s)?;
+
+
             // let logits = candle_nn::ops::softmax(&logits, 1)?;
             // let batch_loss = binary_cross_entropy_loss(&logits, &train_output_tensor)?;
 
             // do proper BCELogitsLoss
-            // let logit_s = logits.dims()[2];
-            // let train_output_tensor = train_output_tensor.interpolate2d(logit_s, logit_s)?;
             // let batch_loss = binary_cross_entropy_logits_loss(&logits, &train_output_tensor, settings.reduction)?;
 
             let batch_loss = cross_entropy_loss(&logits, &train_output_tensor, settings.reduction)?;
