@@ -496,12 +496,12 @@ pub fn fit(
 
     println!("Before first epoch:  {}", get_vram()?);
     // sgd doesn't support momentum, but it would be 0.9
-    // let mut sgd = candle_nn::SGD::new(varmap.all_vars(), settings.learning_rate)?;
-    let param = candle_nn::ParamsAdamW {
-        lr: settings.learning_rate,
-        ..Default::default()
-    };
-    let mut sgd = candle_nn::AdamW::new(varmap.all_vars(), param)?;
+    let mut sgd = candle_nn::SGD::new(varmap.all_vars(), settings.learning_rate)?;
+    // let param = candle_nn::ParamsAdamW {
+        // lr: settings.learning_rate,
+        // ..Default::default()
+    // };
+    // let mut sgd = candle_nn::AdamW::new(varmap.all_vars(), param)?;
     for epoch in settings.epoch..settings.max_epochs.unwrap_or(usize::MAX) {
         if epoch != settings.epoch && epoch.rem_euclid(settings.save_interval) == 0 {
             // Save the checkpoint.
@@ -830,23 +830,26 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     match &cli.command {
         Commands::Fit(s) => {
 
-            let backbone = {
+            let network = {
                 match s.backbone {
                     BackBoneOption::Vgg => {
                         let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
                         let vgg16 = VGG16::new(vs, &device)?;
-                        Backbone::VGG16(vgg16)
+                        let backbone = Backbone::VGG16(vgg16);
+                        let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+                        let network = FCN32s::new(backbone, vs, &device)?;
+                        network
                     }
                     BackBoneOption::Resnet => {
                         let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-                        let resnet = ResNet50::new(vs, &device)?;
-                        Backbone::ResNet50(resnet)
+                        let resnet = ResNet50::new_trainable(vs.pp("backbone"), &device)?;
+                        let backbone = Backbone::ResNet50(resnet);
+                        let network = FCN32s::new(backbone, vs.pp("classifier"), &device)?;
+                        network
                     }
                 }
             };
 
-            let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-            let network = FCN32s::new(backbone, vs, &device)?;
 
             if let Some(v) = &s.load {
                 varmap.load_into(&v, false)?;
