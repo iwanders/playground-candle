@@ -2,7 +2,7 @@ use crate::candle_util::SequentialT;
 use crate::candle_util::*;
 use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::{Activation, ModuleT, VarBuilder, VarMap};
-use super::create_data;
+// use super::create_data;
 use candle_nn::Dropout;
 
 use clap::{Args, Parser, Subcommand};
@@ -246,7 +246,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     let mut network = ResNet50::new(vs.pp("backbone"), &device)?;
     network.add_clasifier_head(21, vs.pp("classifier"))?;
 
-    let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+    // let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     // let network = ResNet50::new(vgg16, vs, &device)?;
 
     let cli = Cli::parse();
