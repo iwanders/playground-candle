@@ -808,6 +808,7 @@ pub struct PrintArgs {
 #[derive(Subcommand)]
 enum Commands {
     Fit(FitSettings),
+    Infer(FitSettings),
     Print(PrintArgs),
     VerifyData,
     Legend,
@@ -818,46 +819,96 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     // let device = Device::Cpu;
 
     println!("Building network");
-    let varmap = VarMap::new();
 
 
     let cli = Cli::parse();
 
-    for v in varmap.all_vars() {
-        println!("var: {:?}   {v:?}", v.as_tensor().id())
+    let varmap = VarMap::new();
+
+    fn create_network(varmap: &VarMap, s: &FitSettings, device: Device, train: bool)  -> std::result::Result<FCN32s, anyhow::Error> {
+
+        let network = {
+            match s.backbone {
+                BackBoneOption::Vgg => {
+                    let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+                    let vgg16 = VGG16::new(vs, &device)?;
+                    let backbone = Backbone::VGG16(vgg16);
+                    let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+                    let network = FCN32s::new(backbone, vs, &device)?;
+                    network
+                }
+                BackBoneOption::Resnet => {
+                    let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+                    let resnet = if train {
+                        ResNet50::new_trainable(vs.pp("backbone"), &device)?
+                    } else {
+                        ResNet50::new(vs.pp("backbone"), &device)?
+                    };
+                    let backbone = Backbone::ResNet50(resnet);
+                    let network = FCN32s::new(backbone, vs.pp("classifier"), &device)?;
+                    network
+                }
+            }
+        };
+        if let Some(v) = &s.load {
+            varmap.load_into(&v, false)?;
+        }
+
+        if let Some(v) = &s.second_load {
+            varmap.load_into(&v, true)?;
+        }
+
+        for v in varmap.all_vars() {
+            println!("var: {:?}   {v:?}", v.as_tensor().id())
+        }
+        Ok(network)
     }
 
     match &cli.command {
-        Commands::Fit(s) => {
+        Commands::Infer(s) => {
+            let network = create_network(&varmap, s, device.clone(), false)?;
+            let (_tensor_samples_train, tensor_samples_val) =
+                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
 
-            let network = {
-                match s.backbone {
-                    BackBoneOption::Vgg => {
-                        let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-                        let vgg16 = VGG16::new(vs, &device)?;
-                        let backbone = Backbone::VGG16(vgg16);
-                        let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-                        let network = FCN32s::new(backbone, vs, &device)?;
-                        network
-                    }
-                    BackBoneOption::Resnet => {
-                        let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-                        let resnet = ResNet50::new_trainable(vs.pp("backbone"), &device)?;
-                        let backbone = Backbone::ResNet50(resnet);
-                        let network = FCN32s::new(backbone, vs.pp("classifier"), &device)?;
-                        network
-                    }
+            let shuffled_indices: Vec<usize> = (0..tensor_samples_val.len()).collect();
+
+            for i in shuffled_indices {
+                let batch_indices = [i];
+                let (train_input_tensor, train_output_tensor) = collect_minibatch_input_output(
+                    &tensor_samples_val,
+                    &batch_indices,
+                    &device,
+                    Segmentation::OneHot,
+                )?;
+
+                println!("Before forward:   {}", get_vram()?);
+                let logits = network.forward_t(&train_input_tensor, false)?;
+                println!("After  forward:   {}", get_vram()?);
+                let img_id = &tensor_samples_val[batch_indices[0]].name;
+                {
+                    let sigm = candle_nn::ops::log_softmax(&logits, 1)?;
+                    let zzz = sigm.argmax_keepdim(1)?; // get maximum in the class dimension
+                    let img = batch_tensor_to_mask(0, &zzz)?;
+                    img.save(format!("/tmp/val_{i:0>3}_{img_id}_pred.png"))?;
                 }
-            };
-
-
-            if let Some(v) = &s.load {
-                varmap.load_into(&v, false)?;
+                {
+                    let zzz = train_output_tensor.argmax_keepdim(1)?; // get maximum in the class dimension
+                    let img = batch_tensor_to_mask(0, &zzz)?;
+                    img.save(format!(
+                        "/tmp/val_{i:0>3}_{img_id}_target.png"
+                    ))?;
+                }
+                img_tensor_to_png(
+                    &train_input_tensor.i(0)?,
+                    &format!("/tmp/val_{i:0>3}_{img_id}_image.png"),
+                )?;
+                
             }
+        
+        }
+        Commands::Fit(s) => {
+            let network = create_network(&varmap, s, device.clone(), true)?;
 
-            if let Some(v) = &s.second_load {
-                varmap.load_into(&v, true)?;
-            }
 
             let (tensor_samples_train, tensor_samples_val) =
                 create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
