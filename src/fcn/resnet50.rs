@@ -73,7 +73,7 @@ impl ResNet50 {
                     xs.clone()
                 };
                 let out = self.block.forward_t(xs, train)?;
-                println!("going to addition");
+                // println!("going to addition");
                 let res = out.add(&ident)?;
                 Ok(res)
             }
@@ -83,7 +83,7 @@ impl ResNet50 {
             // This is the Bottleneck Block flavour.
             let width = planes * (64 / 64) * 1;
             let mut block = SequentialT::new();
-            block.set_prefix(&vs.prefix());
+            // block.set_prefix(&vs.prefix());
             // size mismatch at line below, in first block.
             block.add(ResNet50::conv1x1(inplanes, width, vs.pp("conv1"))?);
             let prefix = vs.prefix();
@@ -111,7 +111,7 @@ impl ResNet50 {
             // Dilation will always be false for normal resnet 50?
             // Ignore that downsample layer for now.
             let mut block = SequentialT::new();
-            block.set_prefix(&vs.prefix());
+            // block.set_prefix(&vs.prefix());
             // let inplanes = planes * ResNet50::BOTTLENECK_EXPANSION;
             let ds = {
                 let mut ds = SequentialT::new();
