@@ -167,10 +167,10 @@ impl ResNet50 {
         } else {
             network.add(MaxPoolStrideLayer::new(3, 2)?);
         }
-        network.add(ShapePrintLayer::new("Before layers"));
+        // network.add(ShapePrintLayer::new("Before layers"));
 
         network.add(make_layer(&[64, 256, 256], 64, 1, vs.pp("layer1"))?);
-        network.add(ShapePrintLayer::new("After layer 1"));
+        // network.add(ShapePrintLayer::new("After layer 1"));
         network.add(make_layer(&[256, 512, 512, 512], 128, 2, vs.pp("layer2"))?);
         network.add(make_layer(&[512, 1024, 1024, 1024, 1024, 1024], 256, 2, vs.pp("layer3"))?);
         network.add(make_layer(&[1024, 2048, 2048], 512, 2, vs.pp("layer4"))?);
