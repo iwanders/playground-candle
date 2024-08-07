@@ -814,11 +814,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
 
     println!("Building network");
     let varmap = VarMap::new();
-    let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    let vgg16 = VGG16::new(vs, &device)?;
 
-    let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    let network = FCN32s::new(Backbone::VGG16(vgg16), vs, &device)?;
 
     let cli = Cli::parse();
 
@@ -828,6 +824,25 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
 
     match &cli.command {
         Commands::Fit(s) => {
+
+            let backbone = {
+                match s.backbone {
+                    BackBoneOption::Vgg => {
+                        let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+                        let vgg16 = VGG16::new(vs, &device)?;
+                        Backbone::VGG16(vgg16)
+                    }
+                    BackBoneOption::Resnet => {
+                        let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+                        let resnet = ResNet50::new(vs, &device)?;
+                        Backbone::ResNet50(resnet)
+                    }
+                }
+            };
+
+            let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+            let network = FCN32s::new(backbone, vs, &device)?;
+
             if let Some(v) = &s.load {
                 varmap.load_into(&v, false)?;
             }
