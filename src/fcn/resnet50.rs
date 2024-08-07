@@ -50,6 +50,14 @@ impl ResNet50 {
 
 
     pub fn new(vs: VarBuilder, device: &Device) -> Result<Self> {
+        Self::new_impl(vs, device, false)
+    }
+
+    pub fn new_trainable(vs: VarBuilder, device: &Device) -> Result<Self> {
+        Self::new_impl(vs, device, true)
+    }
+
+    fn new_impl(vs: VarBuilder, device: &Device, maxpool_train_fix: bool) -> Result<Self> {
         let mut network = SequentialT::new();
 
 
@@ -154,7 +162,11 @@ impl ResNet50 {
         network.add(Activation::Relu); // 2
         // In the original, this padding is inside the maxpool.
         network.add(Pad2DWithValueLayer::new(1, -100000f32));
-        network.add(MaxPoolStrideLayer::new(3, 2)?); // 3
+        if maxpool_train_fix {
+            network.add(MaxPoolStrideLayer::new(3, 3)?); // candle doesn't support backpropagation with not equal kernel & stride.
+        } else {
+            network.add(MaxPoolStrideLayer::new(3, 2)?);
+        }
         network.add(ShapePrintLayer::new("Before layers"));
 
         network.add(make_layer(&[64, 256, 256], 64, 1, vs.pp("layer1"))?);
