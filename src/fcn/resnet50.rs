@@ -193,7 +193,7 @@ impl ResNet50 {
                 block.add(create_block(inplanes[i], planes, 1, vs.pp(i), None)?);
                 block.add(Activation::Relu);
             }
-            block.add(PrintForwardLayer::new(&vs.prefix()));
+            // block.add(PrintForwardLayer::new(&vs.prefix()));
             Ok(block)
         }
 

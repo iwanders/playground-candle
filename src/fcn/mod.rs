@@ -145,7 +145,7 @@ impl FCN32s {
             }
         }
 
-        network.add(UpscaleLayer::new(64, PASCAL_VOC_CLASSES, device)?);
+        // network.add(UpscaleLayer::new(64, PASCAL_VOC_CLASSES, device)?);
 
         Ok(Self {
             backbone,
@@ -661,6 +661,7 @@ pub fn fit(
 pub fn create_data(
     voc_dir: &std::path::Path,
     categories: &[&str],
+    load_limit: Option<usize>,
 ) -> std::result::Result<(Vec<SampleTensor>, Vec<SampleTensor>), anyhow::Error> {
     let device_storage = Device::Cpu;
 
@@ -688,6 +689,11 @@ pub fn create_data(
                 }
             }
         }
+    }
+
+    if let Some(limit) = load_limit {
+        samples_train.truncate(limit);
+        samples_val.truncate(limit);
     }
 
     println!(
@@ -785,6 +791,10 @@ pub struct FitSettings {
     /// Limit training to the first n images.
     train_on_first_n: Option<usize>,
 
+    #[arg(long)]
+    /// Limit loading images to this number.
+    load_limit: Option<usize>,
+
     #[clap(long, action = clap::ArgAction::SetTrue,
         default_missing_value("true"),
         default_value("false"))]
@@ -878,7 +888,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
         Commands::Infer(s) => {
             let network = create_network(&varmap, s, device.clone(), false)?;
             let (_tensor_samples_train, tensor_samples_val) =
-                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
+                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"], s.load_limit)?;
 
             let shuffled_indices: Vec<usize> = (0..tensor_samples_val.len()).collect();
 
@@ -916,7 +926,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
             let network = create_network(&varmap, s, device.clone(), true)?;
 
             let (tensor_samples_train, tensor_samples_val) =
-                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
+                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"], s.load_limit)?;
             // create_data(&cli.data_path, &CLASSESS[1..])?;
 
             println!("Starting fit");
@@ -938,7 +948,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
         }
         Commands::VerifyData => {
             let (tensor_samples_train, tensor_samples_val) =
-                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
+                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"], None)?;
 
             let sample_indices = [0, 50, 100, 200];
 
