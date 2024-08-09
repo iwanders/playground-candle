@@ -176,6 +176,25 @@ impl ModuleT for ShapePrintLayer {
     }
 }
 
+
+pub struct PrintForwardLayer {
+    prefix: String,
+}
+impl PrintForwardLayer {
+    pub fn new(prefix: &str) -> PrintForwardLayer {
+        Self {
+            prefix: prefix.to_owned(),
+        }
+    }
+}
+impl ModuleT for PrintForwardLayer {
+    fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
+        let _ = train;
+        println!("{}: {:?}", self.prefix, xs.p());
+        Ok(xs.clone())
+    }
+}
+
 pub struct Interpolate2DLayer {
     target_h: usize,
     target_w: usize,
