@@ -35,11 +35,19 @@ impl ResNet50 {
         Ok(resnet)
     }
 
-
-    pub fn conv1x1(in_planes: usize, out_planes: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
+    pub fn conv1x1(
+        in_planes: usize,
+        out_planes: usize,
+        vs: VarBuilder,
+    ) -> Result<candle_nn::Conv2d> {
         candle_nn::conv2d_no_bias(in_planes, out_planes, 1, Default::default(), vs.clone())
     }
-    pub fn conv3x3(in_planes: usize, out_planes: usize, stride: usize, vs: VarBuilder) -> Result<candle_nn::Conv2d> {
+    pub fn conv3x3(
+        in_planes: usize,
+        out_planes: usize,
+        stride: usize,
+        vs: VarBuilder,
+    ) -> Result<candle_nn::Conv2d> {
         let c = candle_nn::conv::Conv2dConfig {
             stride,
             padding: 1,
@@ -47,7 +55,6 @@ impl ResNet50 {
         };
         candle_nn::conv2d_no_bias(in_planes, out_planes, 3, c, vs.clone())
     }
-
 
     pub fn new(vs: VarBuilder, device: &Device) -> Result<Self> {
         Self::new_impl(vs, device, false)
@@ -59,7 +66,6 @@ impl ResNet50 {
 
     fn new_impl(vs: VarBuilder, device: &Device, maxpool_train_fix: bool) -> Result<Self> {
         let mut network = SequentialT::new();
-
 
         struct BottleneckBlock {
             pub block: SequentialT,
@@ -79,7 +85,13 @@ impl ResNet50 {
             }
         }
 
-        fn create_block(inplanes: usize, planes: usize, stride: usize, vs: VarBuilder, downsample: Option<SequentialT>) -> Result<BottleneckBlock> {
+        fn create_block(
+            inplanes: usize,
+            planes: usize,
+            stride: usize,
+            vs: VarBuilder,
+            downsample: Option<SequentialT>,
+        ) -> Result<BottleneckBlock> {
             // This is the Bottleneck Block flavour.
             let width = planes * (64 / 64) * 1;
             let mut block = SequentialT::new();
@@ -88,24 +100,44 @@ impl ResNet50 {
             block.add(ResNet50::conv1x1(inplanes, width, vs.pp("conv1"))?);
             let prefix = vs.prefix();
             println!("{prefix}: conv1x1 {inplanes} {width}");
-            block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn1"))?);
+            block.add(candle_nn::batch_norm::batch_norm(
+                width,
+                candle_nn::BatchNormConfig::default(),
+                vs.pp("bn1"),
+            )?);
             println!("{prefix}: batch_norm {width}");
             block.add(ResNet50::conv3x3(width, width, stride, vs.pp("conv2"))?);
             println!("{prefix}: conv3x3 {width} {width} s{stride}");
-            block.add(candle_nn::batch_norm::batch_norm(width, candle_nn::BatchNormConfig::default(), vs.pp("bn2"))?);
+            block.add(candle_nn::batch_norm::batch_norm(
+                width,
+                candle_nn::BatchNormConfig::default(),
+                vs.pp("bn2"),
+            )?);
             println!("{prefix}: batch_norm {width}");
-            block.add(ResNet50::conv1x1(width, planes * ResNet50::BOTTLENECK_EXPANSION, vs.pp("conv3"))?);
+            block.add(ResNet50::conv1x1(
+                width,
+                planes * ResNet50::BOTTLENECK_EXPANSION,
+                vs.pp("conv3"),
+            )?);
             let final_out = planes * ResNet50::BOTTLENECK_EXPANSION;
             println!("{prefix}: conv1x1 {width} {} s{stride}", final_out);
-            block.add(candle_nn::batch_norm::batch_norm(final_out, candle_nn::BatchNormConfig::default(), vs.pp("bn3"))?);
+            block.add(candle_nn::batch_norm::batch_norm(
+                final_out,
+                candle_nn::BatchNormConfig::default(),
+                vs.pp("bn3"),
+            )?);
             println!("{prefix}: batch_norm {final_out}");
             println!();
-            Ok(BottleneckBlock{ block, downsample })
+            Ok(BottleneckBlock { block, downsample })
         }
 
-
         // Okay, we now reached the 'layer' section.
-        fn make_layer(inplanes: &[usize], planes: usize, stride: usize, vs: VarBuilder) -> Result<SequentialT> {
+        fn make_layer(
+            inplanes: &[usize],
+            planes: usize,
+            stride: usize,
+            vs: VarBuilder,
+        ) -> Result<SequentialT> {
             let _ = stride;
             // Some complex stuff here with dilation and stride values.
             // Dilation will always be false for normal resnet 50?
@@ -122,8 +154,17 @@ impl ResNet50 {
                     stride,
                     ..Default::default()
                 };
-                ds.add(candle_nn::conv2d_no_bias(inplanes[0], out, 1, c, vs.pp("0.downsample").pp(0))?);
-                println!("{prefix} ds: conv2d_no_bias {} {out} s{stride}", inplanes[0]);
+                ds.add(candle_nn::conv2d_no_bias(
+                    inplanes[0],
+                    out,
+                    1,
+                    c,
+                    vs.pp("0.downsample").pp(0),
+                )?);
+                println!(
+                    "{prefix} ds: conv2d_no_bias {} {out} s{stride}",
+                    inplanes[0]
+                );
 
                 let norm_config = candle_nn::BatchNormConfig {
                     affine: true,
@@ -131,13 +172,22 @@ impl ResNet50 {
                     eps: 1e-05,
                     ..Default::default()
                 };
-                ds.add(candle_nn::batch_norm::batch_norm(out, norm_config, vs.pp("0.downsample").pp(1))?);
+                ds.add(candle_nn::batch_norm::batch_norm(
+                    out,
+                    norm_config,
+                    vs.pp("0.downsample").pp(1),
+                )?);
                 println!("{prefix} ds: batch_norm {out}");
                 ds
             };
 
-
-            block.add(create_block(inplanes[0], planes, stride, vs.pp(0), Some(ds))?);
+            block.add(create_block(
+                inplanes[0],
+                planes,
+                stride,
+                vs.pp(0),
+                Some(ds),
+            )?);
             block.add(Activation::Relu);
             for i in 1..inplanes.len() {
                 block.add(create_block(inplanes[i], planes, 1, vs.pp(i), None)?);
@@ -146,9 +196,6 @@ impl ResNet50 {
             Ok(block)
         }
 
-
-
-        
         let cp3s2 = candle_nn::conv::Conv2dConfig {
             padding: 3,
             stride: 2,
@@ -158,9 +205,13 @@ impl ResNet50 {
 
         // Block 1
         network.add(candle_nn::conv2d_no_bias(3, 64, 7, cp3s2, vs.pp("conv1"))?); // 0
-        network.add(candle_nn::batch_norm::batch_norm(64, candle_nn::BatchNormConfig::default(), vs.pp("bn1"))?); // 1
+        network.add(candle_nn::batch_norm::batch_norm(
+            64,
+            candle_nn::BatchNormConfig::default(),
+            vs.pp("bn1"),
+        )?); // 1
         network.add(Activation::Relu); // 2
-        // In the original, this padding is inside the maxpool.
+                                       // In the original, this padding is inside the maxpool.
         network.add(Pad2DWithValueLayer::new(1, -100000f32));
         if maxpool_train_fix {
             network.add(MaxPoolStrideLayer::new(3, 3)?); // candle doesn't support backpropagation with not equal kernel & stride.
@@ -172,7 +223,12 @@ impl ResNet50 {
         network.add(make_layer(&[64, 256, 256], 64, 1, vs.pp("layer1"))?);
         // network.add(ShapePrintLayer::new("After layer 1"));
         network.add(make_layer(&[256, 512, 512, 512], 128, 2, vs.pp("layer2"))?);
-        network.add(make_layer(&[512, 1024, 1024, 1024, 1024, 1024], 256, 2, vs.pp("layer3"))?);
+        network.add(make_layer(
+            &[512, 1024, 1024, 1024, 1024, 1024],
+            256,
+            2,
+            vs.pp("layer3"),
+        )?);
         network.add(make_layer(&[1024, 2048, 2048], 512, 2, vs.pp("layer4"))?);
 
         // Output of the backbone is here.
@@ -188,7 +244,7 @@ impl ResNet50 {
         self.network.forward(&x)
     }
 
-    pub fn add_clasifier_head(&mut self, classes:usize, vs: VarBuilder) -> Result<()> {
+    pub fn add_clasifier_head(&mut self, classes: usize, vs: VarBuilder) -> Result<()> {
         // Classifier topology from fcn_resnet50 from torch;
         // (0): Conv2d(2048, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
         // (1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
@@ -197,11 +253,21 @@ impl ResNet50 {
         // (4): Conv2d(512, 21, kernel_size=(1, 1), stride=(1, 1))
         // let vs = vs.pp("classifier");
         self.network.add(ResNet50::conv3x3(2048, 512, 1, vs.pp(0))?);
-        self.network.add(candle_nn::batch_norm::batch_norm(512, candle_nn::BatchNormConfig::default(), vs.pp(1))?);
+        self.network.add(candle_nn::batch_norm::batch_norm(
+            512,
+            candle_nn::BatchNormConfig::default(),
+            vs.pp(1),
+        )?);
         self.network.add(Activation::Relu);
         self.network.add(Dropout::new(0.1));
-        self.network.add(candle_nn::conv2d_no_bias(512, classes, 1, Default::default(), vs.pp(4))?);
-        
+        self.network.add(candle_nn::conv2d_no_bias(
+            512,
+            classes,
+            1,
+            Default::default(),
+            vs.pp(4),
+        )?);
+
         Ok(())
     }
 }
@@ -212,9 +278,6 @@ impl ModuleT for ResNet50 {
         self.network.forward_t(&x, train)
     }
 }
-
-
-
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -231,8 +294,6 @@ pub struct Infer {
     #[arg(long)]
     /// The checkpoint file to load as initialisation
     load: Option<std::path::PathBuf>,
-
-
 }
 
 #[derive(Args, Debug, Clone)]
@@ -287,13 +348,12 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
     Ok(())
 }
 
-
 #[cfg(test)]
 mod test {
 
     use super::*;
 
-    use crate::{error_unwrap}; // approx_equal, 
+    use crate::error_unwrap; // approx_equal,
     use candle_core::Device;
     use candle_nn::{VarBuilder, VarMap};
     #[test]
@@ -306,7 +366,6 @@ mod test {
         let mut network = error_unwrap!(ResNet50::new(vs.clone(), &device));
         let desired_classess = 2000;
         assert!(network.add_clasifier_head(desired_classess, vs).is_ok());
-
 
         // Create a dummy image.
         // Image is 224x224, 3 channels,  make it 0.5 gray

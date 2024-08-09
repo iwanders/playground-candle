@@ -3,7 +3,6 @@ use crate::candle_util::*;
 use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::{Activation, ModuleT, VarBuilder};
 
-
 /// VGG Network, only the convolution section
 ///
 /// https://arxiv.org/pdf/1409.1556
@@ -177,14 +176,12 @@ impl ModuleT for VGG16 {
     }
 }
 
-
-
 #[cfg(test)]
 mod test {
 
     use super::*;
 
-    use crate::{error_unwrap};
+    use crate::error_unwrap;
     use candle_core::Device;
     use candle_nn::{VarBuilder, VarMap};
 
@@ -221,4 +218,3 @@ mod test {
         Ok(())
     }
 }
-

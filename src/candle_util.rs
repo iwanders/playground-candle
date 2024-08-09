@@ -89,7 +89,10 @@ pub struct SequentialT {
 
 impl SequentialT {
     pub fn new() -> Self {
-        Self { layers: vec![], prefix: Default::default() }
+        Self {
+            layers: vec![],
+            prefix: Default::default(),
+        }
     }
 
     pub fn add<T: ModuleT + 'static>(&mut self, v: T) {
@@ -114,7 +117,7 @@ impl SequentialT {
         self.forward_t(xs, false)
     }
 
-    pub fn set_prefix(&mut self, s: &str){
+    pub fn set_prefix(&mut self, s: &str) {
         self.prefix = Some(s.to_owned());
     }
 }
@@ -123,7 +126,6 @@ impl ModuleT for SequentialT {
         SequentialT::forward_t(self, xs, train)
     }
 }
-
 
 pub struct MaxPoolLayer {
     dim: usize,
@@ -146,7 +148,7 @@ pub struct MaxPoolStrideLayer {
 }
 impl MaxPoolStrideLayer {
     pub fn new(sz: usize, stride: usize) -> candle_core::Result<MaxPoolStrideLayer> {
-        Ok(Self { dim: sz, stride})
+        Ok(Self { dim: sz, stride })
     }
 }
 impl ModuleT for MaxPoolStrideLayer {
@@ -156,13 +158,14 @@ impl ModuleT for MaxPoolStrideLayer {
     }
 }
 
-
 pub struct ShapePrintLayer {
     prefix: String,
 }
 impl ShapePrintLayer {
-    pub fn new(prefix: &str) ->  ShapePrintLayer {
-        Self { prefix: prefix.to_owned() }
+    pub fn new(prefix: &str) -> ShapePrintLayer {
+        Self {
+            prefix: prefix.to_owned(),
+        }
     }
 }
 impl ModuleT for ShapePrintLayer {
@@ -172,7 +175,6 @@ impl ModuleT for ShapePrintLayer {
         Ok(xs.clone())
     }
 }
-
 
 pub struct Interpolate2DLayer {
     target_h: usize,
@@ -199,17 +201,30 @@ impl Avg2DLayer {
 impl ModuleT for Avg2DLayer {
     fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
         let _ = train;
-        xs.mean(candle_core::D::Minus1)?.mean(candle_core::D::Minus1)
+        xs.mean(candle_core::D::Minus1)?
+            .mean(candle_core::D::Minus1)
     }
 }
 
 pub trait PadWithValue {
     /// Pad the input tensor using value along dimension `dim`. This adds `left` elements before the
     /// input tensor values and `right` elements after.
-    fn pad_with_value<D: candle_core::shape::Dim>(&self, dim: D, left: usize, right: usize, value: f32) -> candle_core::Result<Tensor> ;
+    fn pad_with_value<D: candle_core::shape::Dim>(
+        &self,
+        dim: D,
+        left: usize,
+        right: usize,
+        value: f32,
+    ) -> candle_core::Result<Tensor>;
 }
 impl PadWithValue for Tensor {
-    fn pad_with_value<D: candle_core::shape::Dim>(&self, dim: D, left: usize, right: usize, value: f32) -> candle_core::Result<Self> {
+    fn pad_with_value<D: candle_core::shape::Dim>(
+        &self,
+        dim: D,
+        left: usize,
+        right: usize,
+        value: f32,
+    ) -> candle_core::Result<Self> {
         if left == 0 && right == 0 {
             Ok(self.clone())
         } else if left == 0 {
@@ -222,21 +237,21 @@ impl PadWithValue for Tensor {
             let dim = dim.to_index(self.shape(), "pad_with_value")?;
             let mut dims = self.dims().to_vec();
             dims[dim] = left;
-            let left = Tensor::full(value, dims.as_slice(),  self.device())?;
+            let left = Tensor::full(value, dims.as_slice(), self.device())?;
             Tensor::cat(&[&left, self], dim)
         } else {
             let dim = dim.to_index(self.shape(), "pad_with_value")?;
             let mut dims = self.dims().to_vec();
             dims[dim] = left;
-            let left = Tensor::full(value, dims.as_slice(),   self.device())?;
+            let left = Tensor::full(value, dims.as_slice(), self.device())?;
             dims[dim] = right;
-            let right = Tensor::full(value, dims.as_slice(),  self.device())?;
+            let right = Tensor::full(value, dims.as_slice(), self.device())?;
             Tensor::cat(&[&left, self, &right], dim)
         }
     }
 }
 
-pub struct PadWithValueLayer{
+pub struct PadWithValueLayer {
     dim: usize,
     left: usize,
     right: usize,
@@ -244,7 +259,12 @@ pub struct PadWithValueLayer{
 }
 impl PadWithValueLayer {
     pub fn new(dim: usize, left: usize, right: usize, value: f32) -> PadWithValueLayer {
-        PadWithValueLayer{dim, left, right, value}
+        PadWithValueLayer {
+            dim,
+            left,
+            right,
+            value,
+        }
     }
 }
 impl ModuleT for PadWithValueLayer {
@@ -260,24 +280,35 @@ pub struct Pad2DWithValueLayer {
 }
 impl Pad2DWithValueLayer {
     pub fn new(padding: usize, value: f32) -> Pad2DWithValueLayer {
-        Pad2DWithValueLayer{padding, value}
+        Pad2DWithValueLayer { padding, value }
     }
 }
 impl ModuleT for Pad2DWithValueLayer {
     fn forward_t(&self, xs: &Tensor, train: bool) -> candle_core::Result<Tensor> {
         let _ = (xs, train);
-        let horizontal = xs.pad_with_value(candle_core::D::Minus1, self.padding, self.padding, self.value)?;
-        horizontal.pad_with_value(candle_core::D::Minus2, self.padding, self.padding, self.value)
+        let horizontal = xs.pad_with_value(
+            candle_core::D::Minus1,
+            self.padding,
+            self.padding,
+            self.value,
+        )?;
+        horizontal.pad_with_value(
+            candle_core::D::Minus2,
+            self.padding,
+            self.padding,
+            self.value,
+        )
     }
 }
 
-
-pub struct PanicLayer{
-    msg: String
+pub struct PanicLayer {
+    msg: String,
 }
 impl PanicLayer {
     pub fn new(msg: &str) -> PanicLayer {
-        PanicLayer{msg: msg.to_owned()}
+        PanicLayer {
+            msg: msg.to_owned(),
+        }
     }
 }
 impl ModuleT for PanicLayer {
@@ -286,7 +317,6 @@ impl ModuleT for PanicLayer {
         panic!("{}", self.msg);
     }
 }
-
 
 pub struct UpscaleLayer {
     kernel: Tensor,
@@ -374,7 +404,10 @@ impl LoadInto for candle_nn::VarMap {
         println!("keys in safetensors: {keys:?}");
         for name in tensor_data_keys.iter() {
             let var = tensor_data.get_mut(name).unwrap();
-            println!("Varmap has {name}, contained in file: {}", keys.contains(name));
+            println!(
+                "Varmap has {name}, contained in file: {}",
+                keys.contains(name)
+            );
             if keys.contains(name) {
                 let data = file_data.load(name, var.device())?;
                 let data = if detached { data.detach() } else { data };

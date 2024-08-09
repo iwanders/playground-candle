@@ -4,7 +4,6 @@ pub mod candle_util;
 pub mod fcn;
 // pub mod candle_fix;
 
-
 pub type MainResult = anyhow::Result<()>;
 pub fn main() -> MainResult {
     // mnist::network::main();

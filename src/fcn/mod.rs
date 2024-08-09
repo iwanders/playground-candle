@@ -95,7 +95,7 @@ impl FCN32s {
         // let norm_config = candle_nn::batch_norm::BatchNormConfig::default();
 
         match &backbone {
-            Backbone::VGG16(_) =>  {
+            Backbone::VGG16(_) => {
                 let padding_one = candle_nn::conv::Conv2dConfig {
                     padding: 1,
                     stride: 1,
@@ -125,16 +125,25 @@ impl FCN32s {
                     padding_zero,
                     vs.pp(format!("score_fr")),
                 )?);
-            },
+            }
             Backbone::ResNet50(_) => {
                 network.add(ResNet50::conv3x3(2048, 512, 1, vs.pp(0))?);
-                network.add(candle_nn::batch_norm::batch_norm(512, candle_nn::BatchNormConfig::default(), vs.pp(1))?);
+                network.add(candle_nn::batch_norm::batch_norm(
+                    512,
+                    candle_nn::BatchNormConfig::default(),
+                    vs.pp(1),
+                )?);
                 network.add(Activation::Relu);
                 network.add(Dropout::new(0.1));
-                network.add(candle_nn::conv2d_no_bias(512, PASCAL_VOC_CLASSES, 1, Default::default(), vs.pp(4))?);
+                network.add(candle_nn::conv2d_no_bias(
+                    512,
+                    PASCAL_VOC_CLASSES,
+                    1,
+                    Default::default(),
+                    vs.pp(4),
+                )?);
             }
         }
-
 
         network.add(UpscaleLayer::new(64, PASCAL_VOC_CLASSES, device)?);
 
@@ -498,8 +507,8 @@ pub fn fit(
     // sgd doesn't support momentum, but it would be 0.9
     let mut sgd = candle_nn::SGD::new(varmap.all_vars(), settings.learning_rate)?;
     // let param = candle_nn::ParamsAdamW {
-        // lr: settings.learning_rate,
-        // ..Default::default()
+    // lr: settings.learning_rate,
+    // ..Default::default()
     // };
     // let mut sgd = candle_nn::AdamW::new(varmap.all_vars(), param)?;
     for epoch in settings.epoch..settings.max_epochs.unwrap_or(usize::MAX) {
@@ -553,7 +562,6 @@ pub fn fit(
             // Scale logits to ensure equal size to output.
             let logit_s = logits.dims()[2];
             let train_output_tensor = train_output_tensor.interpolate2d(logit_s, logit_s)?;
-
 
             // let logits = candle_nn::ops::softmax(&logits, 1)?;
             // let batch_loss = binary_cross_entropy_loss(&logits, &train_output_tensor)?;
@@ -712,12 +720,11 @@ pub fn create_data(
 }
 
 #[derive(clap::ValueEnum, Debug, Clone)] // ArgEnum here
-// #[clap(rename_all = "kebab_case")]
+                                         // #[clap(rename_all = "kebab_case")]
 enum BackBoneOption {
     Vgg,
     Resnet,
 }
-
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -740,7 +747,7 @@ pub struct FitSettings {
     second_load: Option<std::path::PathBuf>,
 
     /// The backbone to use, between vgg and resnet.
-    #[arg(short,long, default_value="resnet")]
+    #[arg(short, long, default_value = "resnet")]
     backbone: BackBoneOption,
 
     #[arg(short)]
@@ -820,13 +827,16 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
 
     println!("Building network");
 
-
     let cli = Cli::parse();
 
     let varmap = VarMap::new();
 
-    fn create_network(varmap: &VarMap, s: &FitSettings, device: Device, train: bool)  -> std::result::Result<FCN32s, anyhow::Error> {
-
+    fn create_network(
+        varmap: &VarMap,
+        s: &FitSettings,
+        device: Device,
+        train: bool,
+    ) -> std::result::Result<FCN32s, anyhow::Error> {
         let network = {
             match s.backbone {
                 BackBoneOption::Vgg => {
@@ -894,21 +904,16 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                 {
                     let zzz = train_output_tensor.argmax_keepdim(1)?; // get maximum in the class dimension
                     let img = batch_tensor_to_mask(0, &zzz)?;
-                    img.save(format!(
-                        "/tmp/val_{i:0>3}_{img_id}_target.png"
-                    ))?;
+                    img.save(format!("/tmp/val_{i:0>3}_{img_id}_target.png"))?;
                 }
                 img_tensor_to_png(
                     &train_input_tensor.i(0)?,
                     &format!("/tmp/val_{i:0>3}_{img_id}_image.png"),
                 )?;
-                
             }
-        
         }
         Commands::Fit(s) => {
             let network = create_network(&varmap, s, device.clone(), true)?;
-
 
             let (tensor_samples_train, tensor_samples_val) =
                 create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"])?;
