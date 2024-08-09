@@ -127,6 +127,7 @@ impl FCN32s {
                 )?);
             }
             Backbone::ResNet50(_) => {
+                network.add(ShapePrintLayer::new("Backbone out")); // This is 28 x 28 in torch, not 7 x 7.
                 network.add(ResNet50::conv3x3(2048, 512, 1, vs.pp(0))?);
                 network.add(candle_nn::batch_norm::batch_norm(
                     512,
