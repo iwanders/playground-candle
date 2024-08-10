@@ -96,6 +96,12 @@ impl ResNet50 {
             let width = planes * (64 / 64) * 1;
             let mut block = SequentialT::new();
             // block.set_prefix(&vs.prefix());
+            block.add(|x: &Tensor|{
+                println!("Block input shape: {:?}", x.shape());
+                // panic!("Block input value: {:?}", x.p());
+                Ok(x.clone())
+            });
+
             // size mismatch at line below, in first block.
             block.add(ResNet50::conv1x1(inplanes, width, vs.pp("conv1"))?);
             let prefix = vs.prefix();
@@ -223,11 +229,12 @@ impl ResNet50 {
         network.add(ShapePrintLayer::new("After maxpool")); // still good here.
         // network.add(ShapePrintLayer::new("Before layers"));
 
+        network.add(ShapePrintLayer::new("Before layer 1"));
         network.add(make_layer(&[64, 256, 256], 64, 1, vs.pp("layer1"))?);
-        // network.add(ShapePrintLayer::new("After layer 1"));
+        network.add(ShapePrintLayer::new("After layer 1"));
         network.add(make_layer(&[256, 512, 512, 512], 128, 2, vs.pp("layer2"))?);
         network.add(make_layer(
-            &[512, 1024, 1024, 1024, 1024, 1024],
+            &[512, 1024, 1024, 1024, 1024, 1024], // Issue is in first block of this layer.
             256,
             2,
             vs.pp("layer3"),
