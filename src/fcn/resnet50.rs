@@ -79,8 +79,8 @@ impl ResNet50 {
                     xs.clone()
                 };
                 let out = self.block.forward_t(xs, train)?;
-                println!("Bottleneck out: {:#}", out);
-                println!("Bottleneck ident: {:#}", ident);
+                // println!("Bottleneck out: {:#}", out);
+                // println!("Bottleneck ident: {:#}", ident);
                 // println!("going to addition");
                 let res = out.add(&ident)?;
                 Ok(res)
@@ -99,7 +99,7 @@ impl ResNet50 {
             let mut block = SequentialT::new();
             // block.set_prefix(&vs.prefix());
             block.add(|x: &Tensor|{
-                println!("Block input shape: {:?}", x.shape());
+                // println!("Block input shape: {:?}", x.shape());
                 // panic!("Block input value: {:?}", x.p());
                 Ok(x.clone())
             });
@@ -162,7 +162,7 @@ impl ResNet50 {
             // Ignore that downsample layer for now.
             let mut block = SequentialT::new();
             block.add(|x: &Tensor|{
-                println!("Bottleneck in: {:#}", x);
+                // println!("Bottleneck in: {:#}", x);
                 // panic!("After maxpool value: {:#?}", x.i((.., 0..=0usize, .., ..))?.p());
                 Ok(x.clone())
             });
@@ -213,17 +213,17 @@ impl ResNet50 {
             )?);
             block.add(Activation::Relu);
             block.add(|x: &Tensor|{
-                println!("Block out shape: {:?}", x.shape());
-                println!("Block out: {:#}", x);
-                panic!();
+                // println!("Block out shape: {:?}", x.shape());
+                // println!("Block out: {:#}", x);
                 Ok(x.clone())
             });
             for i in 1..inplanes.len() {
                 block.add(create_block(inplanes[i], planes, 1, vs.pp(i), None)?);
                 block.add(Activation::Relu);
                 block.add(|x: &Tensor|{
-                    println!("Block out shape: {:?}", x.shape());
-                    println!("Block out: {:#}", x);
+                    // println!("Block out shape: {:?}", x.shape());
+                    // println!("Block out: {:#}", x);
+                    // panic!();
                     Ok(x.clone())
                 });
             }
@@ -241,11 +241,11 @@ impl ResNet50 {
         // Block 1
         network.add(candle_nn::conv2d_no_bias(3, 64, 7, cp3s2, vs.pp("conv1"))?); // 0
         network.add(|x: &Tensor|{
-            println!("After conv1 shape: {:?}", x.shape());
+            // println!("After conv1 shape: {:?}", x.shape());
             // panic!("After conv1 value: {:#?}", x.i((.., 0..=0usize, .., ..))?.p()); // still good here.
             Ok(x.clone())
         });
-        network.add(ShapePrintLayer::new("block 1 conv")); // still good here.
+        // network.add(ShapePrintLayer::new("block 1 conv")); // still good here.
         network.add(candle_nn::batch_norm::batch_norm(
             64,
             candle_nn::BatchNormConfig::default(),
@@ -259,19 +259,19 @@ impl ResNet50 {
         } else {
             network.add(MaxPoolStrideLayer::new(3, 2)?);
         }
-        network.add(ShapePrintLayer::new("After maxpool")); // still good here.
+        // network.add(ShapePrintLayer::new("After maxpool")); // still good here.
         // network.add(ShapePrintLayer::new("Before layers"));
         network.add(|x: &Tensor|{
-            println!("After maxpool shape: {:?}", x.shape());
+            // println!("After maxpool shape: {:?}", x.shape());
             // panic!("After maxpool value: {:#?}", x.i((.., 0..=0usize, .., ..))?.p());
             Ok(x.clone())
         });
         // still good here.
 
 
-        network.add(ShapePrintLayer::new("Before layer 1"));
+        // network.add(ShapePrintLayer::new("Before layer 1"));
         network.add(make_layer(&[64, 256, 256], 64, 1, vs.pp("layer1"))?);
-        network.add(ShapePrintLayer::new("After layer 1"));
+        // network.add(ShapePrintLayer::new("After layer 1"));
         network.add(make_layer(&[256, 512, 512, 512], 128, 2, vs.pp("layer2"))?);
         network.add(make_layer(
             &[512, 1024, 1024, 1024, 1024, 1024], // Issue is in first block of this layer.
