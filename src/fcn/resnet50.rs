@@ -4,7 +4,7 @@ use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::{Activation, ModuleT, VarBuilder, VarMap};
 // use super::create_data;
 use candle_nn::Dropout;
-
+use candle_core::IndexOp;
 use clap::{Args, Parser, Subcommand};
 
 /*
@@ -212,6 +212,11 @@ impl ResNet50 {
 
         // Block 1
         network.add(candle_nn::conv2d_no_bias(3, 64, 7, cp3s2, vs.pp("conv1"))?); // 0
+        network.add(|x: &Tensor|{
+            println!("After conv1 shape: {:?}", x.shape());
+            panic!("After conv1 value: {:?}", x.i((.., 0..=0usize, .., ..))?.p());
+            Ok(x.clone())
+        });
         network.add(ShapePrintLayer::new("block 1 conv")); // still good here.
         network.add(candle_nn::batch_norm::batch_norm(
             64,
@@ -228,6 +233,12 @@ impl ResNet50 {
         }
         network.add(ShapePrintLayer::new("After maxpool")); // still good here.
         // network.add(ShapePrintLayer::new("Before layers"));
+        network.add(|x: &Tensor|{
+            println!("After maxpool shape: {:?}", x.shape());
+            panic!("After maxpool value: {:?}", x.i((.., 0..=0usize, .., ..))?.p());
+            Ok(x.clone())
+        });
+
 
         network.add(ShapePrintLayer::new("Before layer 1"));
         network.add(make_layer(&[64, 256, 256], 64, 1, vs.pp("layer1"))?);
