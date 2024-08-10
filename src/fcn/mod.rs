@@ -650,7 +650,7 @@ pub fn fit(
         println!("Before validate:  {}", get_vram()?);
 
 
-        if epoch != settings.epoch && epoch.rem_euclid(settings.save_interval) == 0 {
+        if epoch.rem_euclid(settings.save_interval) == 0 {
             // Save the checkpoint.
             let mut output_path = settings.save_path.clone();
             output_path.push(format!(

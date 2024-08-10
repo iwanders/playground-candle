@@ -17,13 +17,26 @@ The convolution network parameters are taken from [this article][convolution_mni
 
 ## FCN
 
+Only resnet50 backbone works.
+
 [Paper](https://arxiv.org/pdf/1411.4038)
 
 Training is problematic because of [this issue](https://github.com/huggingface/candle/issues/1241), with some changes in the candle's `backprop.rs` the vram usage is bearable (see [comment](https://github.com/huggingface/candle/issues/1241#issuecomment-2254229442)), but it seems that we also accumulate memory over time as we train, so manually restarting training from a checkpoint seems necessary.
 
 Did run into an issue with stride=2 backpropagation, fixed in [this PR](https://github.com/huggingface/candle/pull/2337).
 
-Needs a different loss function, and properly ignore the unknown areas.
+
+Inference is working with the resnet backbone, with `fcn_resnet50_coco-1167a1af` created from the pytorch fcn_resnet50 weights:
+```
+cargo r --release -- /.../VOCdevkit/VOC2012 infer --load /.../converted_from_hub/fcn_resnet50_coco-1167a1af.safetensors --load-limit 100 --upscale
+```
+
+Training leaks memory but overfitting a single image seems to work:
+```
+cargo r --release -- /.../VOCdevkit/VOC2012 fit --validation-batch-limit 10 --save-val-mask --learning-rate 1e-2 --minibatch-size 15  --save-train-mask --create-post-train-mask  --train-on-first-n 1 --reduction mean --load /.../converted_from_hub/fcn_resnet50_coco-1167a1af.safetensors
+```
+
+The 
 
 ## Notes on Burn
 
