@@ -79,6 +79,8 @@ impl ResNet50 {
                     xs.clone()
                 };
                 let out = self.block.forward_t(xs, train)?;
+                println!("Bottleneck out: {:#}", out);
+                println!("Bottleneck ident: {:#}", ident);
                 // println!("going to addition");
                 let res = out.add(&ident)?;
                 Ok(res)
@@ -102,7 +104,7 @@ impl ResNet50 {
                 Ok(x.clone())
             });
 
-            // size mismatch at line below, in first block.
+            // First section
             block.add(ResNet50::conv1x1(inplanes, width, vs.pp("conv1"))?);
             let prefix = vs.prefix();
             println!("{prefix}: conv1x1 {inplanes} {width}");
@@ -111,6 +113,10 @@ impl ResNet50 {
                 candle_nn::BatchNormConfig::default(),
                 vs.pp("bn1"),
             )?);
+            block.add(Activation::Relu);
+
+
+            // Second section
             println!("{prefix}: batch_norm {width}");
             block.add(ResNet50::conv3x3(width, width, stride, vs.pp("conv2"))?);
             println!("{prefix}: conv3x3 {width} {width} s{stride}");
@@ -119,6 +125,10 @@ impl ResNet50 {
                 candle_nn::BatchNormConfig::default(),
                 vs.pp("bn2"),
             )?);
+            block.add(Activation::Relu);
+
+
+            // Third section.
             println!("{prefix}: batch_norm {width}");
             block.add(ResNet50::conv1x1(
                 width,
@@ -132,6 +142,8 @@ impl ResNet50 {
                 candle_nn::BatchNormConfig::default(),
                 vs.pp("bn3"),
             )?);
+
+
             println!("{prefix}: batch_norm {final_out}");
             println!();
             Ok(BottleneckBlock { block, downsample })
@@ -203,6 +215,7 @@ impl ResNet50 {
             block.add(|x: &Tensor|{
                 println!("Block out shape: {:?}", x.shape());
                 println!("Block out: {:#}", x);
+                panic!();
                 Ok(x.clone())
             });
             for i in 1..inplanes.len() {
