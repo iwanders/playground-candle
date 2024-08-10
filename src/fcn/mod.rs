@@ -424,10 +424,15 @@ impl SampleTensor {
         let img = img
             .resize_exact(224, 224, image::imageops::FilterType::Lanczos3);
         let image_non_normalized = img.clone().to_rgb8();
-        let image = normalize(img.clone(), &[0.485, 0.456, 0.406], &[0.229, 0.224, 0.225])?; 
-
-        
-        // let image = Tensor::from_vec(img.into_vec(), (3, 224, 224), device)?.detach();
+        const NORMALIZE: bool = false;
+        let image = if NORMALIZE {
+            let image = normalize(img.clone(), &[0.485, 0.456, 0.406], &[0.229, 0.224, 0.225])?;
+            image
+        } else {
+            let v = img.to_rgb32f().into_vec();
+            let image = Tensor::from_vec(v , (3, 224, 224), device)?.detach();
+            image
+        };
         // println!("s: {:?}", image.shape());
         // img_tensor_to_png(&image, "/tmp/foo.png")?;
 
@@ -940,6 +945,8 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                 )?;
 
                 println!("Before forward:   {}", get_vram()?);
+                println!("input value: {:#?}", train_input_tensor.i((0, 0, .., ..))?.p());
+                // panic!();
                 let logits = network.forward_t(&train_input_tensor, false)?;
                 println!("After  forward:   {}", get_vram()?);
                 let img_id = &tensor_samples_val[batch_indices[0]].name;
