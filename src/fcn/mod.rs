@@ -401,7 +401,7 @@ fn normalize(
     let channels = 3;
 
     let data =
-        Tensor::from_vec(data, &[channels, height, width], &Device::Cpu)?; //.permute((2, 0, 1))?;
+        Tensor::from_vec(data, &[height, width, channels], &Device::Cpu)?.permute((2, 0, 1))?;
 
     let normed = (data.to_dtype(DType::F32)? / 255.)?
         .broadcast_sub(&mean)?
@@ -434,7 +434,7 @@ impl SampleTensor {
         let img = img
             .resize_exact(224, 224, image::imageops::FilterType::Lanczos3);
         let image_non_normalized = img.clone().to_rgb8();
-        const NORMALIZE: bool = false;
+        const NORMALIZE: bool = true;
         let image = if NORMALIZE {
             let image = normalize(img.clone(), &[0.485, 0.456, 0.406], &[0.229, 0.224, 0.225])?;
             image
@@ -956,8 +956,8 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                 )?;
 
                 println!("Before forward:   {}", get_vram()?);
-                println!("input value: {:#?}", train_input_tensor.i((0, 0, .., ..))?.p());
-                panic!();
+                println!("input value: {:#?}", train_input_tensor.i((0, 1, .., ..))?.p());
+                // panic!();
                 let logits = network.forward_t(&train_input_tensor, false)?;
                 println!("After  forward:   {}", get_vram()?);
                 let img_id = &tensor_samples_val[batch_indices[0]].name;
