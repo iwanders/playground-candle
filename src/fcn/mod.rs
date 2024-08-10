@@ -236,6 +236,7 @@ pub struct SampleTensor {
 pub fn rgbf32_to_image(v: &Tensor) -> anyhow::Result<image::Rgb32FImage> {
     let w = v.dims()[1] as u32;
     let h = v.dims()[2] as u32;
+    let v = v.permute((1, 2, 0)).with_context(|| "permutate failed")?;
     let img = image::Rgb32FImage::from_vec(w, h, v.flatten_all()?.to_vec1()?)
         .with_context(|| "buffer to small")?;
     Ok(img)
