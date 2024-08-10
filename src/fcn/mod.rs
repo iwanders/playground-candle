@@ -411,6 +411,16 @@ fn normalize(
     Ok(normed)
 }
 
+fn image_to_tensor(image: image::DynamicImage) -> Result<Tensor> {
+    let height = image.height() as usize;
+    let width = image.width() as usize;
+    let image = image.to_rgb8();
+    let data = image.into_raw();
+    let channels = 3;
+    let data = Tensor::from_vec(data, &[height, width, channels], &Device::Cpu)?.permute((2, 0, 1))?;
+    data.to_dtype(DType::F32)? / 255.
+}
+
 
 impl SampleTensor {
     pub fn load(
@@ -429,8 +439,9 @@ impl SampleTensor {
             let image = normalize(img.clone(), &[0.485, 0.456, 0.406], &[0.229, 0.224, 0.225])?;
             image
         } else {
-            let v = img.to_rgb32f().into_vec();
-            let image = Tensor::from_vec(v , (3, 224, 224), device)?.detach();
+            let image = image_to_tensor(img)?;
+            // let v = img.to_rgb32f().into_vec();
+            // let image = Tensor::from_vec(v , (3, 224, 224), device)?.detach();
             image
         };
         // println!("s: {:?}", image.shape());
@@ -946,7 +957,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
 
                 println!("Before forward:   {}", get_vram()?);
                 println!("input value: {:#?}", train_input_tensor.i((0, 0, .., ..))?.p());
-                // panic!();
+                panic!();
                 let logits = network.forward_t(&train_input_tensor, false)?;
                 println!("After  forward:   {}", get_vram()?);
                 let img_id = &tensor_samples_val[batch_indices[0]].name;
