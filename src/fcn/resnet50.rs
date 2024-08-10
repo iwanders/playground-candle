@@ -206,6 +206,7 @@ impl ResNet50 {
 
         // Block 1
         network.add(candle_nn::conv2d_no_bias(3, 64, 7, cp3s2, vs.pp("conv1"))?); // 0
+        network.add(ShapePrintLayer::new("block 1 conv")); // still good here.
         network.add(candle_nn::batch_norm::batch_norm(
             64,
             candle_nn::BatchNormConfig::default(),
@@ -219,6 +220,7 @@ impl ResNet50 {
         } else {
             network.add(MaxPoolStrideLayer::new(3, 2)?);
         }
+        network.add(ShapePrintLayer::new("After maxpool")); // still good here.
         // network.add(ShapePrintLayer::new("Before layers"));
 
         network.add(make_layer(&[64, 256, 256], 64, 1, vs.pp("layer1"))?);
