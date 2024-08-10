@@ -390,8 +390,8 @@ fn normalize(
     std: &[f32],
 ) -> Result<Tensor> {
 
-    let mean = Tensor::from_slice(mean, (3, 1, 1), &Device::Cpu)?;
-    let std = Tensor::from_slice(std, (3, 1, 1), &Device::Cpu)?;
+    let mean = Tensor::from_slice(mean, (3, 1, 1), &Device::Cpu)?.detach();
+    let std = Tensor::from_slice(std, (3, 1, 1), &Device::Cpu)?.detach();
 
     let height = image.height() as usize;
     let width = image.width() as usize;
@@ -402,14 +402,14 @@ fn normalize(
     let channels = 3;
 
     let data =
-        Tensor::from_vec(data, &[height, width, channels], &Device::Cpu)?.permute((2, 0, 1))?;
+        Tensor::from_vec(data, &[height, width, channels], &Device::Cpu)?.permute((2, 0, 1))?.detach();
 
     let normed = (data.to_dtype(DType::F32)? / 255.)?
         .broadcast_sub(&mean)?
         .broadcast_div(&std)?;
 
     // panic!("norm shape: {:?}", normed.shape());
-    Ok(normed)
+    Ok(normed.detach())
 }
 
 fn image_to_tensor(image: image::DynamicImage) -> Result<Tensor> {
