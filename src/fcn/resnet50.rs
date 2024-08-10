@@ -149,6 +149,11 @@ impl ResNet50 {
             // Dilation will always be false for normal resnet 50?
             // Ignore that downsample layer for now.
             let mut block = SequentialT::new();
+            block.add(|x: &Tensor|{
+                println!("Bottleneck in: {:#}", x);
+                // panic!("After maxpool value: {:#?}", x.i((.., 0..=0usize, .., ..))?.p());
+                Ok(x.clone())
+            });
             // block.set_prefix(&vs.prefix());
             // let inplanes = planes * ResNet50::BOTTLENECK_EXPANSION;
             let ds = {
@@ -195,9 +200,19 @@ impl ResNet50 {
                 Some(ds),
             )?);
             block.add(Activation::Relu);
+            block.add(|x: &Tensor|{
+                println!("Block out shape: {:?}", x.shape());
+                println!("Block out: {:#}", x);
+                Ok(x.clone())
+            });
             for i in 1..inplanes.len() {
                 block.add(create_block(inplanes[i], planes, 1, vs.pp(i), None)?);
                 block.add(Activation::Relu);
+                block.add(|x: &Tensor|{
+                    println!("Block out shape: {:?}", x.shape());
+                    println!("Block out: {:#}", x);
+                    Ok(x.clone())
+                });
             }
             // block.add(PrintForwardLayer::new(&vs.prefix()));
             Ok(block)
@@ -214,7 +229,7 @@ impl ResNet50 {
         network.add(candle_nn::conv2d_no_bias(3, 64, 7, cp3s2, vs.pp("conv1"))?); // 0
         network.add(|x: &Tensor|{
             println!("After conv1 shape: {:?}", x.shape());
-            // panic!("After conv1 value: {:?}", x.i((.., 0..=0usize, .., ..))?.p());
+            // panic!("After conv1 value: {:#?}", x.i((.., 0..=0usize, .., ..))?.p()); // still good here.
             Ok(x.clone())
         });
         network.add(ShapePrintLayer::new("block 1 conv")); // still good here.
@@ -235,9 +250,10 @@ impl ResNet50 {
         // network.add(ShapePrintLayer::new("Before layers"));
         network.add(|x: &Tensor|{
             println!("After maxpool shape: {:?}", x.shape());
-            // panic!("After maxpool value: {:?}", x.i((.., 0..=0usize, .., ..))?.p());
+            // panic!("After maxpool value: {:#?}", x.i((.., 0..=0usize, .., ..))?.p());
             Ok(x.clone())
         });
+        // still good here.
 
 
         network.add(ShapePrintLayer::new("Before layer 1"));

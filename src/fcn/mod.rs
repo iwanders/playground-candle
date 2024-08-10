@@ -957,7 +957,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                 )?;
 
                 println!("Before forward:   {}", get_vram()?);
-                println!("input value: {:#?}", train_input_tensor.i((0, 1, .., ..))?.p());
+                // println!("input value: {:#?}", train_input_tensor.i((0, 1, .., ..))?.p());
                 // panic!();
                 let logits = network.forward_t(&train_input_tensor, false)?;
                 println!("After  forward:   {}", get_vram()?);
