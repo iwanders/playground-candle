@@ -147,7 +147,7 @@ impl FCN32s {
             }
         }
 
-        // network.add(UpscaleLayer::new(64, PASCAL_VOC_CLASSES, device)?);
+        network.add(UpscaleLayer::new(64, PASCAL_VOC_CLASSES, device)?);
 
         Ok(Self {
             backbone,
@@ -566,15 +566,6 @@ pub fn fit(
     // };
     // let mut sgd = candle_nn::AdamW::new(varmap.all_vars(), param)?;
     for epoch in settings.epoch..settings.max_epochs.unwrap_or(usize::MAX) {
-        if epoch != settings.epoch && epoch.rem_euclid(settings.save_interval) == 0 {
-            // Save the checkpoint.
-            let mut output_path = settings.save_path.clone();
-            output_path.push(format!(
-                "fcn_{epoch}_lr{lr}.safetensors",
-                lr = settings.learning_rate
-            ));
-            varmap.save(&output_path)?;
-        }
 
         shuffled_indices.shuffle(&mut rng);
 
@@ -659,6 +650,18 @@ pub fn fit(
         let avg_loss = sum_loss / (batch_count as f32);
 
         println!("Before validate:  {}", get_vram()?);
+
+
+        if epoch != settings.epoch && epoch.rem_euclid(settings.save_interval) == 0 {
+            // Save the checkpoint.
+            let mut output_path = settings.save_path.clone();
+            output_path.push(format!(
+                "fcn_{epoch}_lr{lr}.safetensors",
+                lr = settings.learning_rate
+            ));
+            varmap.save(&output_path)?;
+        }
+
         // Validate, also in batches to avoid vram limits.
         let mut correct_pixels = 0;
         let mut pixel_count = 0;
@@ -943,7 +946,7 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
         Commands::Infer(s) => {
             let network = create_network(&varmap, s, device.clone(), false)?;
             let (_tensor_samples_train, tensor_samples_val) =
-                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"], s.load_limit)?;
+                create_data(&cli.data_path, &CLASSESS[1..], s.load_limit)?;
 
             let shuffled_indices: Vec<usize> = (0..tensor_samples_val.len()).collect();
 
