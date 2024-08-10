@@ -226,6 +226,7 @@ pub fn gather_ids(
 
 pub struct SampleTensor {
     pub sample: voc_dataset::Sample,
+    pub image_non_normalized: image::RgbImage,
     pub image: Tensor,
     pub segmentation: Tensor,
     pub segmentation_one_hot: Tensor,
@@ -381,6 +382,36 @@ pub fn batch_tensor_to_mask(index: usize, x: &Tensor) -> anyhow::Result<image::R
     tensor_to_mask(&z)
 }
 
+// https://github.com/huggingface/candle/blob/d3fe989d086a6317734e602b5106c9eccdb8745e/candle-examples/examples/trocr/image_processor.rs#L111C1-L143C6
+fn normalize(
+    image: image::DynamicImage,
+    mean: &[f32],
+    std: &[f32],
+) -> Result<Tensor> {
+
+    let mean = Tensor::from_slice(mean, (3, 1, 1), &Device::Cpu)?;
+    let std = Tensor::from_slice(std, (3, 1, 1), &Device::Cpu)?;
+
+    let height = image.height() as usize;
+    let width = image.width() as usize;
+
+    let image = image.to_rgb8();
+    let data = image.into_raw();
+
+    let channels = 3;
+
+    let data =
+        Tensor::from_vec(data, &[channels, height, width], &Device::Cpu)?; //.permute((2, 0, 1))?;
+
+    let normed = (data.to_dtype(DType::F32)? / 255.)?
+        .broadcast_sub(&mean)?
+        .broadcast_div(&std)?;
+
+    // panic!("norm shape: {:?}", normed.shape());
+    Ok(normed)
+}
+
+
 impl SampleTensor {
     pub fn load(
         sample: voc_dataset::Sample,
@@ -391,9 +422,12 @@ impl SampleTensor {
 
         let img = ImageReader::open(&sample.image_path)?.decode()?;
         let img = img
-            .resize_exact(224, 224, image::imageops::FilterType::Lanczos3)
-            .to_rgb32f();
-        let image = Tensor::from_vec(img.into_vec(), (3, 224, 224), device)?.detach();
+            .resize_exact(224, 224, image::imageops::FilterType::Lanczos3);
+        let image_non_normalized = img.clone().to_rgb8();
+        let image = normalize(img.clone(), &[0.485, 0.456, 0.406], &[0.229, 0.224, 0.225])?; 
+
+        
+        // let image = Tensor::from_vec(img.into_vec(), (3, 224, 224), device)?.detach();
         // println!("s: {:?}", image.shape());
         // img_tensor_to_png(&image, "/tmp/foo.png")?;
 
@@ -431,6 +465,7 @@ impl SampleTensor {
 
         Ok(Self {
             sample,
+            image_non_normalized,
             image,
             name,
             segmentation,
@@ -558,8 +593,9 @@ pub fn fit(
                 }
                 img_tensor_to_png(
                     &train_input_tensor.i(0)?,
-                    &format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_image.png"),
+                    &format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_normalized_image.png"),
                 )?;
+                sample_train[batch_indices[0]].image_non_normalized.save(format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_image.png"))?;
             }
             // Scale logits to ensure equal size to output.
             let logit_s = logits.dims()[2];
@@ -918,9 +954,10 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                     let img = batch_tensor_to_mask(0, &zzz)?;
                     img.save(format!("/tmp/val_{i:0>3}_{img_id}_target.png"))?;
                 }
+                tensor_samples_val[batch_indices[0]].image_non_normalized.save(format!("/tmp/val_{i:0>3}_{img_id}_image.png"))?;
                 img_tensor_to_png(
                     &train_input_tensor.i(0)?,
-                    &format!("/tmp/val_{i:0>3}_{img_id}_image.png"),
+                    &format!("/tmp/val_{i:0>3}_{img_id}_normalized_image.png"),
                 )?;
             }
         }

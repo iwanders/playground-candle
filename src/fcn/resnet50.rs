@@ -214,7 +214,7 @@ impl ResNet50 {
         network.add(candle_nn::conv2d_no_bias(3, 64, 7, cp3s2, vs.pp("conv1"))?); // 0
         network.add(|x: &Tensor|{
             println!("After conv1 shape: {:?}", x.shape());
-            panic!("After conv1 value: {:?}", x.i((.., 0..=0usize, .., ..))?.p());
+            // panic!("After conv1 value: {:?}", x.i((.., 0..=0usize, .., ..))?.p());
             Ok(x.clone())
         });
         network.add(ShapePrintLayer::new("block 1 conv")); // still good here.
@@ -235,7 +235,7 @@ impl ResNet50 {
         // network.add(ShapePrintLayer::new("Before layers"));
         network.add(|x: &Tensor|{
             println!("After maxpool shape: {:?}", x.shape());
-            panic!("After maxpool value: {:?}", x.i((.., 0..=0usize, .., ..))?.p());
+            // panic!("After maxpool value: {:?}", x.i((.., 0..=0usize, .., ..))?.p());
             Ok(x.clone())
         });
 
