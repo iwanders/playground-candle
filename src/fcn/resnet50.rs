@@ -236,10 +236,10 @@ impl ResNet50 {
         network.add(make_layer(
             &[512, 1024, 1024, 1024, 1024, 1024], // Issue is in first block of this layer.
             256,
-            2,
+            1,
             vs.pp("layer3"),
         )?);
-        network.add(make_layer(&[1024, 2048, 2048], 512, 2, vs.pp("layer4"))?);
+        network.add(make_layer(&[1024, 2048, 2048], 512, 1, vs.pp("layer4"))?);
 
         // Output of the backbone is here.
         // network.add(PanicLayer::new("got here"));
