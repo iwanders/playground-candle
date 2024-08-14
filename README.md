@@ -36,7 +36,9 @@ Training leaks memory but overfitting a single image seems to work:
 cargo r --release -- /.../VOCdevkit/VOC2012 fit --validation-batch-limit 10 --save-val-mask --learning-rate 1e-2 --minibatch-size 15  --save-train-mask --create-post-train-mask  --train-on-first-n 1 --reduction mean --load /.../converted_from_hub/fcn_resnet50_coco-1167a1af.safetensors
 ```
 
-Inference works relatively well, see the images in `./doc/`.
+Inference works relatively well, see the images in `./doc/` or below, depicting inference & desired target.
+
+<img src="./doc/val_013_2010_002251_pred.png" width="20% "/> <img src="./doc/val_013_2010_002251_target.png" width="20% "/> <img src="./doc/val_018_2008_002358_pred.png" width="20% "/> <img src="./doc/val_018_2008_002358_target.png" width="20% "/>
 
 ## Notes on Burn
 
