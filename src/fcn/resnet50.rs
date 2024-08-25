@@ -110,7 +110,6 @@ impl ResNet50 {
             )?);
             block.add(Activation::Relu);
 
-
             // Second section
             println!("{prefix}: batch_norm {width}");
             block.add(ResNet50::conv3x3(width, width, stride, vs.pp("conv2"))?);
@@ -121,7 +120,6 @@ impl ResNet50 {
                 vs.pp("bn2"),
             )?);
             block.add(Activation::Relu);
-
 
             // Third section.
             println!("{prefix}: batch_norm {width}");
@@ -137,7 +135,6 @@ impl ResNet50 {
                 candle_nn::BatchNormConfig::default(),
                 vs.pp("bn3"),
             )?);
-
 
             println!("{prefix}: batch_norm {final_out}");
             println!();
@@ -202,7 +199,7 @@ impl ResNet50 {
                 Some(ds),
             )?);
             block.add(Activation::Relu);
-            block.add(|x: &Tensor|{
+            block.add(|x: &Tensor| {
                 // println!("Block out shape: {:?}", x.shape());
                 // println!("Block out: {:#}", x);
                 Ok(x.clone())
@@ -224,7 +221,7 @@ impl ResNet50 {
 
         // Block 1
         network.add(candle_nn::conv2d_no_bias(3, 64, 7, cp3s2, vs.pp("conv1"))?); // 0
-        // network.add(ShapePrintLayer::new("block 1 conv")); // still good here.
+                                                                                  // network.add(ShapePrintLayer::new("block 1 conv")); // still good here.
         network.add(candle_nn::batch_norm::batch_norm(
             64,
             candle_nn::BatchNormConfig::default(),
@@ -238,7 +235,6 @@ impl ResNet50 {
         } else {
             network.add(MaxPoolStrideLayer::new(3, 2)?);
         }
-
 
         // network.add(ShapePrintLayer::new("Before layer 1"));
         network.add(make_layer(&[64, 256, 256], 64, 1, vs.pp("layer1"))?);

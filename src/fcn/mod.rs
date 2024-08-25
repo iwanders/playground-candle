@@ -382,12 +382,7 @@ pub fn batch_tensor_to_mask(index: usize, x: &Tensor) -> anyhow::Result<image::R
 }
 
 // https://github.com/huggingface/candle/blob/d3fe989d086a6317734e602b5106c9eccdb8745e/candle-examples/examples/trocr/image_processor.rs#L111C1-L143C6
-fn normalize(
-    image: image::DynamicImage,
-    mean: &[f32],
-    std: &[f32],
-) -> Result<Tensor> {
-
+fn normalize(image: image::DynamicImage, mean: &[f32], std: &[f32]) -> Result<Tensor> {
     let mean = Tensor::from_slice(mean, (3, 1, 1), &Device::Cpu)?.detach();
     let std = Tensor::from_slice(std, (3, 1, 1), &Device::Cpu)?.detach();
 
@@ -399,8 +394,9 @@ fn normalize(
 
     let channels = 3;
 
-    let data =
-        Tensor::from_vec(data, &[height, width, channels], &Device::Cpu)?.permute((2, 0, 1))?.detach();
+    let data = Tensor::from_vec(data, &[height, width, channels], &Device::Cpu)?
+        .permute((2, 0, 1))?
+        .detach();
 
     let normed = (data.to_dtype(DType::F32)? / 255.)?
         .broadcast_sub(&mean)?
@@ -416,10 +412,10 @@ fn image_to_tensor(image: image::DynamicImage) -> Result<Tensor> {
     let image = image.to_rgb8();
     let data = image.into_raw();
     let channels = 3;
-    let data = Tensor::from_vec(data, &[height, width, channels], &Device::Cpu)?.permute((2, 0, 1))?;
+    let data =
+        Tensor::from_vec(data, &[height, width, channels], &Device::Cpu)?.permute((2, 0, 1))?;
     data.to_dtype(DType::F32)? / 255.
 }
-
 
 impl SampleTensor {
     pub fn load(
@@ -430,8 +426,7 @@ impl SampleTensor {
         // println!("sample: {sample:?}");
 
         let img = ImageReader::open(&sample.image_path)?.decode()?;
-        let img = img
-            .resize_exact(224, 224, image::imageops::FilterType::Lanczos3);
+        let img = img.resize_exact(224, 224, image::imageops::FilterType::Lanczos3);
         let image_non_normalized = img.clone().to_rgb8();
         const NORMALIZE: bool = true;
         let image = if NORMALIZE {
@@ -564,7 +559,6 @@ pub fn fit(
     // };
     // let mut sgd = candle_nn::AdamW::new(varmap.all_vars(), param)?;
     for epoch in settings.epoch..settings.max_epochs.unwrap_or(usize::MAX) {
-
         shuffled_indices.shuffle(&mut rng);
 
         let mut sum_loss = 0.0f32;
@@ -601,7 +595,11 @@ pub fn fit(
                     &train_input_tensor.i(0)?,
                     &format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_normalized_image.png"),
                 )?;
-                sample_train[batch_indices[0]].image_non_normalized.save(format!("/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_image.png"))?;
+                sample_train[batch_indices[0]]
+                    .image_non_normalized
+                    .save(format!(
+                        "/tmp/train_{epoch:0>5}_{bi:0>2}_{img_id}_image.png"
+                    ))?;
             }
             // Scale logits to ensure equal size to output.
             let logit_s = logits.dims()[2];
@@ -648,7 +646,6 @@ pub fn fit(
         let avg_loss = sum_loss / (batch_count as f32);
 
         println!("Before validate:  {}", get_vram()?);
-
 
         if epoch.rem_euclid(settings.save_interval) == 0 {
             // Save the checkpoint.
@@ -980,7 +977,9 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
                     let img = batch_tensor_to_mask(0, &zzz)?;
                     img.save(format!("/tmp/val_{i:0>3}_{img_id}_target.png"))?;
                 }
-                tensor_samples_val[batch_indices[0]].image_non_normalized.save(format!("/tmp/val_{i:0>3}_{img_id}_image.png"))?;
+                tensor_samples_val[batch_indices[0]]
+                    .image_non_normalized
+                    .save(format!("/tmp/val_{i:0>3}_{img_id}_image.png"))?;
                 img_tensor_to_png(
                     &train_input_tensor.i(0)?,
                     &format!("/tmp/val_{i:0>3}_{img_id}_normalized_image.png"),
@@ -990,8 +989,11 @@ pub fn main() -> std::result::Result<(), anyhow::Error> {
         Commands::Fit(s) => {
             let network = create_network(&varmap, s, device.clone(), true)?;
 
-            let (tensor_samples_train, tensor_samples_val) =
-                create_data(&cli.data_path, &["person", "cat", "bicycle", "bird"], s.load_limit)?;
+            let (tensor_samples_train, tensor_samples_val) = create_data(
+                &cli.data_path,
+                &["person", "cat", "bicycle", "bird"],
+                s.load_limit,
+            )?;
             // create_data(&cli.data_path, &CLASSESS[1..])?;
 
             println!("Starting fit");

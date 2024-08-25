@@ -176,7 +176,6 @@ impl ModuleT for ShapePrintLayer {
     }
 }
 
-
 pub struct PrintForwardLayer {
     prefix: String,
 }
